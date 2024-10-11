@@ -67,6 +67,7 @@
 
 /* Modification */
 #include "ns3/custom-priority-tag.h"
+#include "ns3/custom-cc-tag.h"
 #include "ns3/flow-id-tag.h"
 #include "ns3/feedback-tag.h"
 #include "ns3/unsched-tag.h"
@@ -183,6 +184,8 @@ TcpSocketBase::GetTypeId()
                             MakeUintegerAccessor(&TcpSocketBase::flowId), MakeUintegerChecker<uint32_t>())
             .AddAttribute  ("mypriority","mypriority tag", UintegerValue(0),
                             MakeUintegerAccessor(&TcpSocketBase::mypriority), MakeUintegerChecker<uint32_t>())
+            .AddAttribute  ("mycc","mycc tag", UintegerValue(0),
+                            MakeUintegerAccessor(&TcpSocketBase::mycc), MakeUintegerChecker<uint32_t>())
             .AddAttribute  ("RTTBytes","RTT bytes is the bandwidth-delay product. A tag is attached for the first RTTBytes", UintegerValue(15000),
                             MakeUintegerAccessor(&TcpSocketBase::rtt_bytes), MakeUintegerChecker<uint32_t>())
             /* Modification */
@@ -3206,6 +3209,10 @@ TcpSocketBase::AddSocketTags(const Ptr<Packet>& p) const
     a.SetPriority(0);
 //       std::cout << uint32_t(priority) << std::endl;
   p->ReplacePacketTag(a);
+
+  MyCcTag c;
+  c.SetCc(mycc);
+  p->ReplacePacketTag(c);
 
   // Initializing feedback tag (intended as a header or as part of options)
   if (m_congestionControl->getDcEnabled()){

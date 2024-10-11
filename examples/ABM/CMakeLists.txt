@@ -37,4 +37,17 @@ build_example(
     ${libinternet}
     ${libapplications}
 )
+build_example(
+  NAME mycc-evaluation-multi
+  SOURCE_FILES 
+    mycc-evaluation-multi.cc
+    cdf.c
+  HEADER_FILES
+    cdf.h
+ LIBRARIES_TO_LINK
+   ${libpoint-to-point}
+   ${libtraffic-control}
+   ${libinternet}
+   ${libapplications}
+)
 set_source_files_properties(cdf.c PROPERTIES SKIP_PRECOMPILE_HEADERS ON)

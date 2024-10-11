@@ -112,23 +112,23 @@ N_PRIO=2
 LOAD=0.4
 BURST_FREQ=2
 
-for TCP in $DCTCP $TIMELY $POWERTCP;do
-	for BURST_SIZES in 0.125 0.25 0.375 0.5 0.75;do
-		for ALG in $DT $ABM;do
-			FLOW_END_TIME=13 #$(python3 -c "print(10+3*0.8/$LOAD)")
-			while [[ $(( $(ps aux | grep abm-evaluation-multi-optimized | wc -l)+$(ps aux | grep evaluation-optimized | wc -l) )) -gt $N_CORES ]];do
-				sleep 30;
-				echo "waiting for cores, $N running..."
-			done
-			BURST_SIZE=$(python3 -c "print($BURST_SIZES*$BUFFER)")
-			FLOWFILE="$DUMP_DIR/fcts-single-$TCP-$ALG-$LOAD-$BURST_SIZES-$BURST_FREQ.fct"
-			TORFILE="$DUMP_DIR/tor-single-$TCP-$ALG-$LOAD-$BURST_SIZES-$BURST_FREQ.stat"
-			N=$(( $N+1 ))
-			(time ./waf --run "abm-evaluation --load=$LOAD --StartTime=$START_TIME --EndTime=$END_TIME --FlowLaunchEndTime=$FLOW_END_TIME --serverCount=$SERVERS --spineCount=$SPINES --leafCount=$LEAVES --linkCount=$LINKS --spineLeafCapacity=$LEAF_SPINE_CAP --leafServerCapacity=$SERVER_LEAF_CAP --linkLatency=$LATENCY --TcpProt=$TCP --BufferSize=$BUFFER --statBuf=$STATIC_BUFFER --algorithm=$ALG --RedMinTh=$RED_MIN --RedMaxTh=$RED_MAX --request=$BURST_SIZE --queryRequestRate=$BURST_FREQ --nPrior=$N_PRIO --alphasFile=$ALPHAFILE --cdfFileName=$CDFFILE --alphaUpdateInterval=$ALPHA_UPDATE_INT --fctOutFile=$FLOWFILE --torOutFile=$TORFILE" ; echo "$FLOWFILE")&
-			sleep 10
-		done
-	done
-done
+# for TCP in $DCTCP $TIMELY $POWERTCP;do
+# 	for BURST_SIZES in 0.125 0.25 0.375 0.5 0.75;do
+# 		for ALG in $DT $ABM;do
+# 			FLOW_END_TIME=13 #$(python3 -c "print(10+3*0.8/$LOAD)")
+# 			while [[ $(( $(ps aux | grep abm-evaluation-multi-optimized | wc -l)+$(ps aux | grep evaluation-optimized | wc -l) )) -gt $N_CORES ]];do
+# 				sleep 30;
+# 				echo "waiting for cores, $N running..."
+# 			done
+# 			BURST_SIZE=$(python3 -c "print($BURST_SIZES*$BUFFER)")
+# 			FLOWFILE="$DUMP_DIR/fcts-single-$TCP-$ALG-$LOAD-$BURST_SIZES-$BURST_FREQ.fct"
+# 			TORFILE="$DUMP_DIR/tor-single-$TCP-$ALG-$LOAD-$BURST_SIZES-$BURST_FREQ.stat"
+# 			N=$(( $N+1 ))
+# 			(time ./waf --run "abm-evaluation --load=$LOAD --StartTime=$START_TIME --EndTime=$END_TIME --FlowLaunchEndTime=$FLOW_END_TIME --serverCount=$SERVERS --spineCount=$SPINES --leafCount=$LEAVES --linkCount=$LINKS --spineLeafCapacity=$LEAF_SPINE_CAP --leafServerCapacity=$SERVER_LEAF_CAP --linkLatency=$LATENCY --TcpProt=$TCP --BufferSize=$BUFFER --statBuf=$STATIC_BUFFER --algorithm=$ALG --RedMinTh=$RED_MIN --RedMaxTh=$RED_MAX --request=$BURST_SIZE --queryRequestRate=$BURST_FREQ --nPrior=$N_PRIO --alphasFile=$ALPHAFILE --cdfFileName=$CDFFILE --alphaUpdateInterval=$ALPHA_UPDATE_INT --fctOutFile=$FLOWFILE --torOutFile=$TORFILE" ; echo "$FLOWFILE")&
+# 			sleep 10
+# 		done
+# 	done
+# done
 
 ##################################################################################
 # Cubic at various loads under different buffer management schemes 

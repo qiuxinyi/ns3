@@ -139,6 +139,7 @@ private:
   /* Modification */
   uint32_t        m_flowId;
   uint8_t         m_priorCustom;
+  uint8_t         m_ccCustom;
   uint8_t         m_priorClassifier;
   uint32_t        InitialCwnd;
   Time            m_sendAt;

@@ -82,7 +82,9 @@ PacketSink::GetTypeId (void)
     .AddAttribute ("priorityCustom","priority of sent packets",UintegerValue (1),
                   MakeUintegerAccessor (&PacketSink::m_priorCustom),
                   MakeUintegerChecker<uint8_t> ())
-
+    .AddAttribute ("ccCustom","cc of sent packets",UintegerValue (1),
+                  MakeUintegerAccessor (&PacketSink::m_ccCustom),
+                  MakeUintegerChecker<uint8_t> ())
     .AddAttribute  ("flowId","flowId mainly intended for ack packets. This will be passed to tcp socket base", UintegerValue(2),
                         MakeUintegerAccessor(&PacketSink::flowId), MakeUintegerChecker<uint32_t>())
     .AddAttribute  ("senderPriority","senderPriority. This is just to get FCT with corresponding priority in the stats", UintegerValue(2),
@@ -161,6 +163,7 @@ void PacketSink::StartApplication ()    // Called at time specified by Start
       m_socket->SetPriority(priority);
       m_socket->SetAttribute("flowId",UintegerValue(flowId));
       m_socket->SetAttribute("mypriority",UintegerValue(m_priorCustom));
+      m_socket->SetAttribute("mycc",UintegerValue(m_ccCustom));
       /* Modification */
       if (m_socket->Bind (m_local) == -1)
         {
@@ -170,6 +173,7 @@ void PacketSink::StartApplication ()    // Called at time specified by Start
       m_socket->SetPriority(priority);
       m_socket->SetAttribute("flowId",UintegerValue(flowId));
       m_socket->SetAttribute("mypriority",UintegerValue(m_priorCustom));
+      m_socket->SetAttribute("mycc",UintegerValue(m_ccCustom));
       /* Modification */
       m_socket->Listen ();
       m_socket->ShutdownSend ();
@@ -205,6 +209,7 @@ void PacketSink::StartApplication ()    // Called at time specified by Start
       m_socket->SetPriority(priority);
       m_socket->SetAttribute("flowId",UintegerValue(flowId));
       m_socket->SetAttribute("mypriority",UintegerValue(m_priorCustom));
+      m_socket->SetAttribute("mycc",UintegerValue(m_ccCustom));
   /* Modification */
   m_socket->SetRecvCallback (MakeCallback (&PacketSink::HandleRead, this));
   m_socket->SetRecvPktInfo (true);
@@ -294,10 +299,10 @@ void PacketSink::HandleRead (Ptr<Socket> socket)
         if(m_totalRx >= TotalQueryBytes){
           double totalSize = m_totalRx ;//+ ((m_totalRx-1)/(1400.0)+1)*(64); // TODO: Add header sizes more precisely.
           if (m_recvAt.GetSeconds()!=0){
-            m_flowFinishTrace(totalSize, m_recvAt.GetNanoSeconds(),true,sender_priority);
+            m_flowFinishTrace(totalSize, m_recvAt.GetNanoSeconds(),true,sender_priority,m_ccCustom);
           }
           else{
-            m_flowFinishTrace(totalSize, m_startTime.GetNanoSeconds(),false,sender_priority);
+            m_flowFinishTrace(totalSize, m_startTime.GetNanoSeconds(),false,sender_priority,m_ccCustom);
             // std::cout << "Flow finished. FCT = " << Simulator::Now().GetSeconds()-m_startTime.GetSeconds() << " seconds" << std::endl;
           }
           StopApplication();
@@ -364,6 +369,7 @@ void PacketSink::HandleAccept (Ptr<Socket> s, const Address& from)
     s->SetPriority(priority);
     s->SetAttribute("flowId",UintegerValue(flowId));
     s->SetAttribute("mypriority",UintegerValue(m_priorCustom));
+    s->SetAttribute("mycc",UintegerValue(m_ccCustom));
   /* Modification */
   s->SetRecvCallback (MakeCallback (&PacketSink::HandleRead, this));
   m_socketList.push_back (s);

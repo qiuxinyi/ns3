@@ -35,6 +35,7 @@
 /* Modification */
 #include "ns3/flow-id-tag.h"
 #include "ns3/custom-priority-tag.h"
+#include "ns3/custom-cc-tag.h"
 /* Modification */
 
 namespace ns3 {
@@ -93,6 +94,9 @@ BulkSendApplication::GetTypeId (void)
                   MakeTimeChecker ())
     .AddAttribute ("priorityCustom","priority of sent packets",UintegerValue (1),
                   MakeUintegerAccessor (&BulkSendApplication::m_priorCustom),
+                  MakeUintegerChecker<uint8_t> ())
+    .AddAttribute ("ccCustom","cc of sent packets",UintegerValue (1),
+                  MakeUintegerAccessor (&BulkSendApplication::m_ccCustom),
                   MakeUintegerChecker<uint8_t> ())
     .AddAttribute ("priorityClassifier","priority of sent packets in the buffer",UintegerValue (1),
                   MakeUintegerAccessor (&BulkSendApplication::m_priorClassifier),
@@ -169,6 +173,7 @@ void BulkSendApplication::StartApplication (void) // Called at time specified by
       m_socket->SetAttribute("InitialCwnd",UintegerValue(InitialCwnd));
       m_socket->SetAttribute("flowId",UintegerValue(m_flowId));
       m_socket->SetAttribute("mypriority",UintegerValue(m_priorCustom));
+      m_socket->SetAttribute("mycc",UintegerValue(m_ccCustom));
       m_socket->SetPriority(priority);
       /* Modification */
 
@@ -210,6 +215,7 @@ void BulkSendApplication::StartApplication (void) // Called at time specified by
         m_socket->SetAttribute("InitialCwnd",UintegerValue(InitialCwnd));
         m_socket->SetAttribute("flowId",UintegerValue(m_flowId));
         m_socket->SetAttribute("mypriority",UintegerValue(m_priorCustom));
+        m_socket->SetAttribute("mycc",UintegerValue(m_ccCustom));
       /* Modification */
       m_socket->Connect (m_peer);
       m_socket->ShutdownRecv ();
@@ -310,6 +316,9 @@ void BulkSendApplication::SendData (const Address &from, const Address &to)
       // Flow ID Tag
       FlowIdTag flowid(m_flowId);
       packet->AddPacketTag(flowid);
+      MyPriorityTag b;
+      b.SetPriority(m_ccCustom);
+      packet->AddPacketTag(b);
 
       // Custom priority tag
       MyPriorityTag a;

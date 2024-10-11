@@ -13,9 +13,9 @@
 #include <ctime>
 #include <set>
 #include <unordered_map>
-#include <pybind11/embed.h>
-#include <pybind11/numpy.h>
-#include <pybind11/stl.h>
+// #include <pybind11/embed.h>
+// #include <pybind11/numpy.h>
+// #include <pybind11/stl.h>
 
 #include "ns3/core-module.h"
 #include "ns3/applications-module.h"
@@ -65,8 +65,8 @@ extern "C"
 
 
 using namespace ns3;
-namespace py = pybind11;
-using namespace pybind11::literals;
+// namespace py = pybind11;
+// using namespace pybind11::literals;
 
 NS_LOG_COMPONENT_DEFINE ("CREDENCE_EVALUATION");
 
@@ -352,31 +352,36 @@ void install_applications (int txLeaf, NodeContainer* servers, double requestRat
 	// std::cout << "Finished installation of applications from leaf-"<< fromLeafId << std::endl;
 }
 
-void getPrediction(py::object rf, py::object castInteger, uint32_t queueLength, uint32_t averageQueueLength, uint32_t sharedOccupancy,  uint32_t averageOccupancy, int &drop){
-	if (Simulator::Now().GetSeconds()>=START_TIME){
-		int pred = castInteger.attr("getPrediction")(rf, queueLength, averageQueueLength, sharedOccupancy, averageOccupancy).cast<int>();
-		if (pred ==0 || pred==1){
-			drop = pred;
-			// std::cout << "COUT out is: " << drop << std::endl;
-		}
-		else{
-			drop = 0;
-		}
-	}
-	else
-		drop = 0;
-}
+// void getPrediction(py::object rf, py::object castInteger, uint32_t queueLength, uint32_t averageQueueLength, uint32_t sharedOccupancy,  uint32_t averageOccupancy, int &drop){
+// 	if (Simulator::Now().GetSeconds()>=START_TIME){
+// 		int pred = castInteger.attr("getPrediction")(rf, queueLength, averageQueueLength, sharedOccupancy, averageOccupancy).cast<int>();
+// 		if (pred ==0 || pred==1){
+// 			drop = pred;
+// 			// std::cout << "COUT out is: " << drop << std::endl;
+// 		}
+// 		else{
+// 			drop = 0;
+// 		}
+// 	}
+// 	else
+// 		drop = 0;
+// }
 
-void getRecord(py::object rf, py::object castInteger, uint32_t queueLength, uint32_t averageQueueLength, uint32_t sharedOccupancy,  uint32_t averageOccupancy, int &drop){
-	 std::cout << "queueLength: " << queueLength << std::endl;
-}
+// void getRecord(py::object rf, py::object castInteger, uint32_t queueLength, uint32_t averageQueueLength, uint32_t sharedOccupancy,  uint32_t averageOccupancy, int &drop){
+// 	 std::cout << "queueLength: " << queueLength << std::endl;
+// }
 
 int
 main (int argc, char *argv[])
 {
-	py::scoped_interpreter guard{};
-	py::object joblib = py::module_::import("joblib");
-	py::object castInteger = py::module_::import("cast-to-integer");
+	// py::scoped_interpreter guard{};
+	// py::object joblib = py::module_::import("joblib");
+	// py::object castInteger = py::module_::import("cast-to-integer");
+
+	double loadCubic = 0.5;
+	double loadDctcp = 0.1;
+	double loadPower = 0.0;
+
 	// py::object rf = joblib.attr("load")(py::str("/home/vamsi/src/phd/codebase/ns3-datacenter/simulator/ns-3.39/examples/Credence/rf_models/model-2-0.8-0.875-2-WS-2.joblib"));
 	// int drop = 1;
 	// py::object *a = &rf;
@@ -729,6 +734,8 @@ main (int argc, char *argv[])
 	Ipv4AddressHelper ipv4;
 	Ipv4InterfaceContainer serverNics[LEAF_COUNT][SERVER_COUNT];
 
+	//py::object rf[LEAF_COUNT+SPINE_COUNT];
+
 	for (uint32_t leaf = 0; leaf < LEAF_COUNT; leaf++) {
 		sharedMemoryLeaf[leaf] = CreateObject<SharedMemoryBuffer>();
 		sharedMemoryLeaf[leaf]->SetAttribute("BufferSize", UintegerValue(BufferSize));
@@ -843,7 +850,7 @@ main (int argc, char *argv[])
 				}
 				genDisc->setErr(errorProb);
 				genDisc->SetAttribute("predict",BooleanValue(true));
-				genDisc->TraceConnectWithoutContext("getPrediction", MakeBoundCallback(&getPrediction, rf[leaf], castInteger));
+				//genDisc->TraceConnectWithoutContext("getPrediction", MakeBoundCallback(&getPrediction, rf[leaf], castInteger));
 				//genDisc->TraceConnectWithoutContext("getRecord", MakeBoundCallback(&getRecord, rf[leaf], castInteger));
 
 				break;
@@ -903,8 +910,8 @@ main (int argc, char *argv[])
 					genDisc[1]->SetAttribute("predict",BooleanValue(true));
 					genDisc[0]->setErr(errorProb);
 					genDisc[1]->setErr(errorProb);
-					genDisc[0]->TraceConnectWithoutContext("getPrediction", MakeBoundCallback(&getPrediction, rf[leaf], castInteger));
-					genDisc[1]->TraceConnectWithoutContext("getPrediction", MakeBoundCallback(&getPrediction, rf[LEAF_COUNT+spine], castInteger));
+					//genDisc[0]->TraceConnectWithoutContext("getPrediction", MakeBoundCallback(&getPrediction, rf[leaf], castInteger));
+					//genDisc[1]->TraceConnectWithoutContext("getPrediction", MakeBoundCallback(&getPrediction, rf[LEAF_COUNT+spine], castInteger));
 					//genDisc[0]->TraceConnectWithoutContext("getRecord", MakeBoundCallback(&getRecord, rf[leaf], castInteger));
 					//genDisc[1]->TraceConnectWithoutContext("getRecord", MakeBoundCallback(&getRecord, rf[LEAF_COUNT+spine], castInteger));
 				}

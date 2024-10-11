@@ -188,6 +188,7 @@ private:
   uint32_t        priority;
   uint32_t        flowId;
   uint32_t        m_priorCustom;
+  uint32_t        m_ccCustom;
   uint32_t        sender_priority;
   /* Modification */
 
@@ -199,7 +200,7 @@ private:
   TracedCallback<Ptr<const Packet>, const Address &, const Address &, const SeqTsSizeHeader&> m_rxTraceWithSeqTsSize;
 
   /* Modification */
-  TracedCallback<double, double,bool,uint32_t> m_flowFinishTrace;
+  TracedCallback<double, double,bool,uint32_t,uint32_t> m_flowFinishTrace;
   /* Modification */
 };
 

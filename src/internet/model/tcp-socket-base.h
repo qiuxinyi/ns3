@@ -1394,6 +1394,7 @@ class TcpSocketBase : public TcpSocket
   uint32_t lastTimedPacketSize;
   uint32_t flowId=0;
   uint32_t mypriority=0;
+  uint32_t mycc=0;
   uint32_t rtt_bytes;
   mutable uint32_t totalByteswithTag=0;
   /* Modification */

@@ -37,7 +37,6 @@
 # define CS 103
 # define IB 104
 # define ABM 110
-# define MYCC 555
 
 
 /*Congestion Control Algorithms*/
@@ -62,7 +61,7 @@ using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE ("ABM_EVALUATION");
 
-uint32_t PORT_START[512] = {4444};
+uint32_t PORT_START[32 * 20] = {4444};
 
 double alpha_values[8] = {1};
 
@@ -72,9 +71,8 @@ AsciiTraceHelper asciiTraceHelper;
 Ptr<OutputStreamWrapper> torStats;
 AsciiTraceHelper torTraceHelper;
 
-Ptr<SharedMemoryBuffer> sharedMemoryLeaf[10];
-QueueDiscContainer northQueues[10];
-QueueDiscContainer ToRQueueDiscs[10];
+Ptr<SharedMemoryBuffer> sharedMemoryLeaf[40];
+QueueDiscContainer northQueues[40];
 
 double poission_gen_interval(double avg_rate)
 {
@@ -92,12 +90,12 @@ T rand_range (T min, T max)
 
 double baseRTTNano;
 double nicBw;
-void TraceMsgFinish (Ptr<OutputStreamWrapper> stream, double size, double start, bool incast, uint32_t prior )
+void TraceMsgFinish (Ptr<OutputStreamWrapper> stream, double size, double start, bool incast, uint32_t prior, uint32_t cc )
 {
 	double fct, standalone_fct, slowdown;
-	fct = Simulator::Now().GetNanoSeconds() - start;   //flow的完成时间
-	standalone_fct = baseRTTNano + size * 8.0 / nicBw;  //在算理论上flow需要完成的时间
-	slowdown = fct / standalone_fct; //延误的比例
+	fct = Simulator::Now().GetNanoSeconds() - start;
+	standalone_fct = baseRTTNano + size * 8.0 / nicBw;
+	slowdown = fct / standalone_fct;
 
 	*stream->GetStream ()
 	        << Simulator::Now().GetSeconds()
@@ -108,6 +106,7 @@ void TraceMsgFinish (Ptr<OutputStreamWrapper> stream, double size, double start,
 	        << " " << baseRTTNano / 1e3
 	        << " " << (start / 1e3 - Seconds(10).GetMicroSeconds())
 	        << " " << prior
+			<< " " << cc
 	        << " " << incast
 	        << std::endl;
 }
@@ -142,25 +141,6 @@ InvokeToRStats(Ptr<OutputStreamWrapper> stream, uint32_t BufferSize, uint32_t le
 	Simulator::Schedule(NanoSeconds(nanodelay), InvokeToRStats, stream, BufferSize, leafId, nanodelay);
 }
 
-void
-InvokePerPortToRStats(Ptr<OutputStreamWrapper> stream, uint32_t BufferSize, uint32_t leafId, double nanodelay) {
-	Ptr<SharedMemoryBuffer> sm = sharedMemoryLeaf[leafId];
-	QueueDiscContainer queues = northQueues[leafId];
-	for (uint32_t i = 0; i < queues.GetN(); i++) {
-		Ptr<GenQueueDisc> genDisc = DynamicCast<GenQueueDisc>(queues.Get(i));
-		double totalThroughput = genDisc->GetThroughputPort(nanodelay);
-		*stream->GetStream()
-		        << " " << Simulator::Now().GetSeconds()
-		        << " " << leafId
-		        << " " << genDisc->getPortId()
-		        << " " << double(BufferSize) / 1e6
-		        << " " << 100 * double(genDisc->GetCurrentSize().GetValue()) / BufferSize
-		        << " " << 100 * totalThroughput
-		        << std::endl;
-	}
-	Simulator::Schedule(NanoSeconds(nanodelay), InvokePerPortToRStats, stream, BufferSize, leafId, nanodelay);
-}
-
 
 int tar = 0;
 int get_target_leaf(int leafCount) {
@@ -173,12 +153,12 @@ int get_target_leaf(int leafCount) {
 }
 
 void install_applications_incast (int incastLeaf, NodeContainer* servers, double requestRate, uint32_t requestSize, struct cdf_table *cdfTable,
-                                  long &flowCount, int SERVER_COUNT, int LEAF_COUNT, double START_TIME, double END_TIME, double FLOW_LAUNCH_END_TIME, int numPrior)
+                                  long &flowCount, int SERVER_COUNT, int LEAF_COUNT, double START_TIME, double END_TIME, double FLOW_LAUNCH_END_TIME, int priority,int cc)
 {
-	int fan = SERVER_COUNT;
+	int fan = SERVER_COUNT * (LEAF_COUNT - 1);
 	uint64_t flowSize = double(requestSize) / double(fan);
 
-	uint32_t prior = rand_range(1, numPrior - 1);
+	uint32_t prior = priority;
 
 	for (int incastServer = 0; incastServer < SERVER_COUNT; incastServer++)
 	{
@@ -186,56 +166,62 @@ void install_applications_incast (int incastLeaf, NodeContainer* servers, double
 		while (startTime < FLOW_LAUNCH_END_TIME && startTime > START_TIME)
 		{
 			// Permutation demand matrix
-			int txLeaf = incastLeaf + 1;
-			if (txLeaf == LEAF_COUNT) {
-				txLeaf = 0;
-			}
+			// int txLeaf=incastLeaf+1;
+			//    if (txLeaf==LEAF_COUNT){
+			//    	txLeaf = 0;
+			//    }
 			// int txLeaf=incastLeaf;
 			// while (txLeaf==incastLeaf){
 			//     txLeaf = get_target_leaf(LEAF_COUNT);
 			// }
-
-			for (uint32_t txServer = 0; txServer < fan; txServer++) {
-
-				uint16_t port = PORT_START[ incastLeaf * SERVER_COUNT + incastServer]++;
-				if (port > PORT_END) {
-					port = 4444;
-					PORT_START[incastLeaf * SERVER_COUNT + incastServer] = 4444;
+			for (uint32_t txLeaf = 0; txLeaf < LEAF_COUNT; txLeaf++) {
+				if (txLeaf == incastLeaf) {
+					continue;
 				}
-				Time startApp = (NanoSeconds (150) + MilliSeconds(rand_range(50, 1000)));
-				Ptr<Node> rxNode = servers[incastLeaf].Get (incastServer);
-				Ptr<Ipv4> ipv4 = rxNode->GetObject<Ipv4> ();
-				Ipv4InterfaceAddress rxInterface = ipv4->GetAddress (1, 0);
-				Ipv4Address rxAddress = rxInterface.GetLocal ();
+				for (uint32_t txServer = 0; txServer < SERVER_COUNT; txServer++) {
 
-				InetSocketAddress ad (rxAddress, port);
-				Address sinkAddress(ad);
-				Ptr<BulkSendApplication> bulksend = CreateObject<BulkSendApplication>();
-				bulksend->SetAttribute("Protocol", TypeIdValue(TcpSocketFactory::GetTypeId()));
-				bulksend->SetAttribute ("SendSize", UintegerValue (flowSize));
-				bulksend->SetAttribute ("MaxBytes", UintegerValue(flowSize));
-				bulksend->SetAttribute("FlowId", UintegerValue(flowCount++));
-				bulksend->SetAttribute("priorityCustom", UintegerValue(prior));
-				bulksend->SetAttribute("Remote", AddressValue(sinkAddress));
-				bulksend->SetAttribute("InitialCwnd", UintegerValue (flowSize / PACKET_SIZE + 1));
-				bulksend->SetAttribute("priority", UintegerValue(prior));
-				bulksend->SetAttribute("sendAt", TimeValue(Seconds (startTime)));
-				bulksend->SetStartTime (startApp);
-				bulksend->SetStopTime (Seconds (END_TIME));
-				servers[txLeaf].Get (txServer)->AddApplication(bulksend);
+					uint16_t port = PORT_START[incastLeaf * SERVER_COUNT + incastServer]++;
+					if (port > PORT_END) {
+						port = 4444;
+						PORT_START[incastLeaf * SERVER_COUNT + incastServer] = 4444;
+					}
+					Time startApp = (NanoSeconds (150) + MilliSeconds(rand_range(50, 1000)));
+					Ptr<Node> rxNode = servers[incastLeaf].Get (incastServer);
+					Ptr<Ipv4> ipv4 = rxNode->GetObject<Ipv4> ();
+					Ipv4InterfaceAddress rxInterface = ipv4->GetAddress (1, 0);
+					Ipv4Address rxAddress = rxInterface.GetLocal ();
 
-				PacketSinkHelper sink ("ns3::TcpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), port));
-				ApplicationContainer sinkApp = sink.Install (servers[incastLeaf].Get(incastServer));
-				sinkApp.Get(0)->SetAttribute("TotalQueryBytes", UintegerValue(flowSize));
-				sinkApp.Get(0)->SetAttribute("recvAt", TimeValue(Seconds(startTime)));
-				sinkApp.Get(0)->SetAttribute("priority", UintegerValue(0)); // ack packets are prioritized
-				sinkApp.Get(0)->SetAttribute("priorityCustom", UintegerValue(0)); // ack packets are prioritized
-				sinkApp.Get(0)->SetAttribute("senderPriority", UintegerValue(prior));
-				sinkApp.Get(0)->SetAttribute("flowId", UintegerValue(flowCount));
-				flowCount += 1;
-				sinkApp.Start (startApp);
-				sinkApp.Stop (Seconds (END_TIME));
-				sinkApp.Get(0)->TraceConnectWithoutContext("FlowFinish", MakeBoundCallback(&TraceMsgFinish, fctOutput));
+					InetSocketAddress ad (rxAddress, port);
+					Address sinkAddress(ad);
+					Ptr<BulkSendApplication> bulksend = CreateObject<BulkSendApplication>();
+					bulksend->SetAttribute("Protocol", TypeIdValue(TcpSocketFactory::GetTypeId()));
+					bulksend->SetAttribute ("SendSize", UintegerValue (flowSize));
+					bulksend->SetAttribute ("MaxBytes", UintegerValue(flowSize));
+					bulksend->SetAttribute("FlowId", UintegerValue(flowCount++));
+					bulksend->SetAttribute("priorityCustom", UintegerValue(prior));
+					bulksend->SetAttribute("ccCustom", UintegerValue(cc));//设置myPriorityTag
+					bulksend->SetAttribute("Remote", AddressValue(sinkAddress));
+					bulksend->SetAttribute("InitialCwnd", UintegerValue (12800));
+					bulksend->SetAttribute("priority", UintegerValue(prior));
+					bulksend->SetAttribute("sendAt", TimeValue(Seconds (startTime)));
+					bulksend->SetStartTime (startApp);
+					bulksend->SetStopTime (Seconds (END_TIME));
+					servers[txLeaf].Get (txServer)->AddApplication(bulksend);
+
+					PacketSinkHelper sink ("ns3::TcpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), port));
+					ApplicationContainer sinkApp = sink.Install (servers[incastLeaf].Get(incastServer));
+					sinkApp.Get(0)->SetAttribute("TotalQueryBytes", UintegerValue(flowSize));
+					sinkApp.Get(0)->SetAttribute("recvAt", TimeValue(Seconds(startTime)));
+					sinkApp.Get(0)->SetAttribute("priority", UintegerValue(0)); // ack packets are prioritized
+					sinkApp.Get(0)->SetAttribute("priorityCustom", UintegerValue(0)); // ack packets are prioritized
+					sinkApp.Get(0)->SetAttribute("ccCustom", UintegerValue(cc)); // ack packets are prioritized
+					sinkApp.Get(0)->SetAttribute("flowId", UintegerValue(flowCount));
+					sinkApp.Get(0)->SetAttribute("senderPriority", UintegerValue(prior));
+					flowCount += 1;
+					sinkApp.Start (startApp);
+					sinkApp.Stop (Seconds (END_TIME));
+					sinkApp.Get(0)->TraceConnectWithoutContext("FlowFinish", MakeBoundCallback(&TraceMsgFinish, fctOutput));
+				}
 			}
 			startTime += poission_gen_interval (requestRate);
 		}
@@ -243,12 +229,11 @@ void install_applications_incast (int incastLeaf, NodeContainer* servers, double
 }
 
 void install_applications (int txLeaf, NodeContainer* servers, double requestRate, struct cdf_table *cdfTable,
-                           long &flowCount, int SERVER_COUNT, int LEAF_COUNT, double START_TIME, double END_TIME, double FLOW_LAUNCH_END_TIME, int numPrior)
+                           long &flowCount, int SERVER_COUNT, int LEAF_COUNT, double START_TIME, double END_TIME, double FLOW_LAUNCH_END_TIME, int priority,int cc)
 {
 	uint64_t flowSize;
 
-	uint32_t prior = rand_range(1, numPrior - 1);
-
+	uint32_t prior = priority;
 	for (int txServer = 0; txServer < SERVER_COUNT; txServer++)
 	{
 		double startTime = START_TIME + poission_gen_interval (requestRate);
@@ -256,7 +241,7 @@ void install_applications (int txLeaf, NodeContainer* servers, double requestRat
 		{
 			// Permutation demand matrix
 			int rxLeaf = txLeaf + 1;
-			if (rxLeaf == LEAF_COUNT) {
+			if (rxLeaf >= 2) {
 				rxLeaf = 0;
 			}
 			// int rxLeaf=txLeaf;
@@ -265,6 +250,8 @@ void install_applications (int txLeaf, NodeContainer* servers, double requestRat
 			// }
 
 			uint32_t rxServer = rand_range(0, SERVER_COUNT);
+			if (rxServer == SERVER_COUNT)
+				rxServer = SERVER_COUNT - 1;
 
 			uint16_t port = PORT_START[rxLeaf * SERVER_COUNT + rxServer]++;
 			if (port > PORT_END) {
@@ -290,6 +277,7 @@ void install_applications (int txLeaf, NodeContainer* servers, double requestRat
 			bulksend->SetAttribute ("MaxBytes", UintegerValue(flowSize));
 			bulksend->SetAttribute("FlowId", UintegerValue(flowCount++));
 			bulksend->SetAttribute("priorityCustom", UintegerValue(prior));
+			bulksend->SetAttribute("ccCustom", UintegerValue(cc));
 			bulksend->SetAttribute("Remote", AddressValue(sinkAddress));
 			bulksend->SetAttribute("InitialCwnd", UintegerValue (55));
 			bulksend->SetAttribute("priority", UintegerValue(prior));
@@ -302,6 +290,7 @@ void install_applications (int txLeaf, NodeContainer* servers, double requestRat
 			sinkApp.Get(0)->SetAttribute("TotalQueryBytes", UintegerValue(flowSize));
 			sinkApp.Get(0)->SetAttribute("priority", UintegerValue(0)); // ack packets are prioritized
 			sinkApp.Get(0)->SetAttribute("priorityCustom", UintegerValue(0)); // ack packets are prioritized
+			sinkApp.Get(0)->SetAttribute("ccCustom", UintegerValue(cc));
 			sinkApp.Get(0)->SetAttribute("flowId", UintegerValue(flowCount));
 			sinkApp.Get(0)->SetAttribute("senderPriority", UintegerValue(prior));
 			flowCount += 1;
@@ -319,8 +308,8 @@ void install_applications (int txLeaf, NodeContainer* servers, double requestRat
 int
 main (int argc, char *argv[])
 {
-	std::cout << "enter mycc cout " << std::endl;
 	CommandLine cmd;
+
 	double START_TIME = 10;
 	double FLOW_LAUNCH_END_TIME = 13;
 	double END_TIME = 20;
@@ -332,11 +321,18 @@ main (int argc, char *argv[])
 	cmd.AddValue ("randomSeed", "Random seed, 0 for random generated", randomSeed);
 
 	double load = 0.6;
+	double loadCubic = 0.5;
+	double loadDctcp = 0.1;
+	double loadPower = 0.0;
+	cmd.AddValue ("loadCubic", "Load of the network, 0.0 - 1.0", loadCubic);
+	cmd.AddValue ("loadDctcp", "Load of the network, 0.0 - 1.0", loadDctcp);
+	cmd.AddValue ("loadPower", "Load of the network, 0.0 - 1.0", loadPower);
 	cmd.AddValue ("load", "Load of the network, 0.0 - 1.0", load);
+
 
 	uint32_t SERVER_COUNT = 32;
 	uint32_t SPINE_COUNT = 2;
-	uint32_t LEAF_COUNT = 2;
+	uint32_t LEAF_COUNT = 5;
 	uint32_t LINK_COUNT = 4;
 	uint64_t spineLeafCapacity = 10; //Gbps
 	uint64_t leafServerCapacity = 10; //Gbps
@@ -359,7 +355,7 @@ main (int argc, char *argv[])
 
 	uint32_t algorithm = DT;
 	cmd.AddValue ("algorithm", "Buffer Management algorithm", algorithm);
-	std::cout << "set algorithm is mycc " << std::endl;
+
 	/*RED Parameters*/
 	uint32_t RedMinTh = 65;
 	uint32_t RedMaxTh = 65;
@@ -373,15 +369,16 @@ main (int argc, char *argv[])
 	cmd.AddValue ("sched", "scheduling", sched);
 
 	uint32_t requestSize = 0.2 * BufferSize;
-	double queryRequestRate = 0; // at each server (per second)
+	double queryRequestRate = 2; // at each server (per second)
 	cmd.AddValue ("request", "Query Size in Bytes", requestSize);
 	cmd.AddValue("queryRequestRate", "Query request rate (poisson arrivals)", queryRequestRate);
 
-	uint32_t nPrior = 2; // number queues in switch ports
+	uint32_t nPrior = 8; // number queues in switch ports
 	cmd.AddValue ("nPrior", "number of priorities", nPrior);
 
-	std::string alphasFile = "/home/vamsi/src/phd/codebase/ns3-datacenter/simulator/ns-3.35/examples/ABM/alphas"; // On lakewood
-	std::string cdfFileName = "/home/vamsi/src/phd/codebase/ns3-datacenter/simulator/ns-3.35/examples/ABM/websearch.txt";
+	std::string alphasFile = "/home/vamsi/src/phd/ns3-datacenter/simulator/ns-3.35/examples/ABM/abm-evaluation/alphas"; // On lakewood
+	// std::string cdfFileName = "/home/vamsi/FB_Simulations/ns-allinone-3.33/ns-3.33/examples/plasticine/DCTCP_CDF.txt";
+	std::string cdfFileName = "/home/vamsi/src/phd/ns3-datacenter/simulator/ns-3.35/examples/ABM/websearch.txt";
 	std::string cdfName = "WS";
 	cmd.AddValue ("alphasFile", "alpha values file (should be exactly nPrior lines)", alphasFile);
 	cmd.AddValue ("cdfFileName", "File name for flow distribution", cdfFileName);
@@ -403,9 +400,6 @@ main (int argc, char *argv[])
 	uint32_t rto = 10 * 1000; // in MicroSeconds, 5 milliseconds.
 	cmd.AddValue ("rto", "min Retransmission timeout value in MicroSeconds", rto);
 
-	uint32_t torPrintall = 0;
-	cmd.AddValue ("torPrintall", "torPrintall", torPrintall);
-
 	/*Parse CMD*/
 	cmd.Parse (argc, argv);
 
@@ -420,47 +414,30 @@ main (int argc, char *argv[])
 	        << "basertt "
 	        <<  "flowstart "
 	        << "priority "
+			<< "cc"
 	        << "incast "
 	        << std::endl;
 
 	torStats = torTraceHelper.CreateFileStream (torOutFile);
 
-	if (!torPrintall) {
-		*torStats->GetStream ()
-		        << "time "
-		        << "tor "
-		        << "bufferSizeMB "
-		        << "occupiedBufferPct "
-		        << "uplinkThroughput "
-		        << "priority0 "
-		        << "priority1 "
-		        << "priority2 "
-		        << "priority3 "
-		        << "priority4 "
-		        << "priority5 "
-		        << "priority6 "
-		        << "priority7 "
-		        << std::endl;
-	}
-	else {
-		*torStats->GetStream()
-		        << "time "
-		        << "tor "
-		        << "portId "
-		        << "bufferSizeMB "
-		        << "PortOccBuffer "
-		        << "PortThroughput "
-		        << std::endl;
-	}
+	*torStats->GetStream ()
+	        << "time "
+	        << "tor "
+	        << "bufferSizeMB "
+	        << "occupiedBufferPct "
+	        << "uplinkThroughput "
+	        << "priority0 "
+	        << "priority1 "
+	        << "priority2 "
+	        << "priority3 "
+	        << "priority4 "
+	        << "priority5 "
+	        << "priority6 "
+	        << "priority7 "
+	        << std::endl;
 
 	uint32_t staticBuffer = (double) BufferSize * statBuf / (SERVER_COUNT + SPINE_COUNT * LINK_COUNT);
 	BufferSize = BufferSize - staticBuffer; // BufferSize is the buffer pool which is available for sharing
-	if (UseEcn) {
-		ecnEnabled = "EcnEnabled";
-	}
-	else {
-		ecnEnabled = "EcnDisabled";
-	}
 
 	/*Reading alpha values from file*/
 	std::string line;
@@ -504,6 +481,8 @@ main (int argc, char *argv[])
 	uint16_t handle;
 	TrafficControlHelper::ClassIdList cid;
 
+	Config::SetDefault ("ns3::Ipv4GlobalRouting::FlowEcmpRouting", BooleanValue(true));
+
 	/*General TCP Socket settings. Mostly used by various congestion control algorithms in common*/
 	Config::SetDefault ("ns3::TcpSocket::ConnTimeout", TimeValue (MilliSeconds (10))); // syn retry interval
 	Config::SetDefault ("ns3::TcpSocketBase::MinRto", TimeValue (MicroSeconds (rto)) );  //(MilliSeconds (5))
@@ -513,159 +492,38 @@ main (int argc, char *argv[])
 	Config::SetDefault ("ns3::TcpSocket::SndBufSize", UintegerValue (1073725440)); //1073725440
 	Config::SetDefault ("ns3::TcpSocket::RcvBufSize", UintegerValue (1073725440));
 	Config::SetDefault ("ns3::TcpSocket::ConnCount", UintegerValue (6));  // Syn retry count
-	Config::SetDefault ("ns3::TcpSocketBase::Timestamp", BooleanValue (true));
+	Config::SetDefault ("ns3::TcpSocketBase::Timestamp", BooleanValue (false));
 	Config::SetDefault ("ns3::TcpSocket::SegmentSize", UintegerValue (PACKET_SIZE));
 	Config::SetDefault ("ns3::TcpSocket::DelAckCount", UintegerValue (0));
 	Config::SetDefault ("ns3::TcpSocket::PersistTimeout", TimeValue (Seconds (20)));
 
 
-	/*CC Configuration*/
-	switch (TcpProt) {
-	case RENO:
-		Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (ns3::TcpNewReno::GetTypeId()));
-		Config::SetDefault ("ns3::Ipv4GlobalRouting::FlowEcmpRouting", BooleanValue(true));
-		Config::SetDefault("ns3::GenQueueDisc::nPrior", UintegerValue(nPrior));
-		Config::SetDefault("ns3::GenQueueDisc::RoundRobin", UintegerValue(1));
-		Config::SetDefault("ns3::GenQueueDisc::StrictPriority", UintegerValue(0));
-		handle = tc.SetRootQueueDisc ("ns3::GenQueueDisc");
-		cid = tc.AddQueueDiscClasses (handle, nPrior , "ns3::QueueDiscClass");
-		for (uint32_t num = 0; num < nPrior; num++) {
-			tc.AddChildQueueDisc (handle, cid[num], "ns3::FifoQueueDisc");
-		}
-		break;
-	case CUBIC:
-		Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (ns3::TcpCubic::GetTypeId()));
-		Config::SetDefault ("ns3::Ipv4GlobalRouting::FlowEcmpRouting", BooleanValue(true));
-		Config::SetDefault("ns3::GenQueueDisc::nPrior", UintegerValue(nPrior));
-		Config::SetDefault("ns3::GenQueueDisc::RoundRobin", UintegerValue(1));
-		Config::SetDefault("ns3::GenQueueDisc::StrictPriority", UintegerValue(0));
-		handle = tc.SetRootQueueDisc ("ns3::GenQueueDisc");
-		cid = tc.AddQueueDiscClasses (handle, nPrior , "ns3::QueueDiscClass");
-		for (uint32_t num = 0; num < nPrior; num++) {
-			tc.AddChildQueueDisc (handle, cid[num], "ns3::FifoQueueDisc");
-		}
-		break;
-	case DCTCP:
-		Config::SetDefault ("ns3::TcpL4Protocol::SocketType", TypeIdValue (ns3::TcpDctcp::GetTypeId()));
-		Config::SetDefault ("ns3::RedQueueDisc::UseEcn", BooleanValue (true));
-		Config::SetDefault ("ns3::RedQueueDisc::QW", DoubleValue (1.0));
-		Config::SetDefault ("ns3::RedQueueDisc::MinTh", DoubleValue (RedMinTh * PACKET_SIZE));
-		Config::SetDefault ("ns3::RedQueueDisc::MaxTh", DoubleValue (RedMaxTh * PACKET_SIZE));
-		Config::SetDefault ("ns3::RedQueueDisc::MaxSize", QueueSizeValue (QueueSize ("100MB"))); // This is just for initialization. The buffer management algorithm will take care of the rest.
-		Config::SetDefault ("ns3::TcpSocketBase::UseEcn", StringValue ("On"));
-		Config::SetDefault ("ns3::RedQueueDisc::LInterm", DoubleValue (0.0));
-		Config::SetDefault ("ns3::RedQueueDisc::UseHardDrop", BooleanValue (false));
-		Config::SetDefault ("ns3::RedQueueDisc::Gentle", BooleanValue (false));
-		Config::SetDefault ("ns3::RedQueueDisc::MeanPktSize", UintegerValue (PACKET_SIZE));
-		Config::SetDefault ("ns3::Ipv4GlobalRouting::FlowEcmpRouting", BooleanValue(true));
-		UseEcn = 1;
-		ecnEnabled = "EcnEnabled";
-		Config::SetDefault("ns3::GenQueueDisc::nPrior", UintegerValue(nPrior));
-		Config::SetDefault("ns3::GenQueueDisc::RoundRobin", UintegerValue(1));
-		Config::SetDefault("ns3::GenQueueDisc::StrictPriority", UintegerValue(0));
-		handle = tc.SetRootQueueDisc ("ns3::GenQueueDisc");
-		cid = tc.AddQueueDiscClasses (handle, nPrior , "ns3::QueueDiscClass");
-		for (uint32_t num = 0; num < nPrior; num++) {
-			tc.AddChildQueueDisc (handle, cid[num], "ns3::RedQueueDisc", "MinTh", DoubleValue (RedMinTh * PACKET_SIZE), "MaxTh", DoubleValue (RedMaxTh * PACKET_SIZE));
-		}
-		break;
-	case HPCC:
-		Config::SetDefault("ns3::TcpL4Protocol::SocketType", TypeIdValue (ns3::TcpAdvanced::GetTypeId()));
-		// Config::SetDefault("ns3::TcpSocketBase::Sack", BooleanValue(false));
-		Config::SetDefault("ns3::TcpSocketState::initCCRate", DataRateValue(DataRate(LEAF_SERVER_CAPACITY)));
-		Config::SetDefault("ns3::TcpSocketState::minCCRate", DataRateValue(DataRate("100Mbps")));
-		Config::SetDefault("ns3::TcpSocketState::maxCCRate", DataRateValue(DataRate(LEAF_SERVER_CAPACITY)));
-		Config::SetDefault("ns3::TcpSocketState::AI", DataRateValue(DataRate("100Mbps")));
-		Config::SetDefault("ns3::TcpSocketState::mThreshHpcc", UintegerValue(5));
-		Config::SetDefault("ns3::TcpSocketState::fastReactHpcc", BooleanValue(true));
-		Config::SetDefault("ns3::TcpSocketState::sampleFeedbackHpcc", BooleanValue(false));
-		Config::SetDefault("ns3::TcpSocketState::useHpcc", BooleanValue(true));
-		Config::SetDefault("ns3::TcpSocketState::multipleRateHpcc", BooleanValue(false));
-		Config::SetDefault("ns3::TcpSocketState::targetUtil", DoubleValue(0.95));
-		Config::SetDefault("ns3::TcpSocketState::baseRtt", TimeValue(MicroSeconds(linkLatency * 4 * 2 + 2 * double(PACKET_SIZE * 8) / (LEAF_SERVER_CAPACITY))));
-		Config::SetDefault ("ns3::Ipv4GlobalRouting::FlowEcmpRouting", BooleanValue(true));
-		Config::SetDefault("ns3::GenQueueDisc::nPrior", UintegerValue(nPrior));
-		Config::SetDefault("ns3::GenQueueDisc::RoundRobin", UintegerValue(1));
-		Config::SetDefault("ns3::GenQueueDisc::StrictPriority", UintegerValue(0));
-		handle = tc.SetRootQueueDisc ("ns3::GenQueueDisc");
-		cid = tc.AddQueueDiscClasses (handle, nPrior , "ns3::QueueDiscClass");
-		for (uint32_t num = 0; num < nPrior; num++) {
-			tc.AddChildQueueDisc (handle, cid[num], "ns3::FifoQueueDisc");
-		}
-		break;
-	case TIMELY:
-		Config::SetDefault("ns3::TcpL4Protocol::SocketType", TypeIdValue (ns3::TcpAdvanced::GetTypeId()));
-		// Config::SetDefault("ns3::TcpSocketBase::Sack", BooleanValue(false));
-		Config::SetDefault("ns3::TcpSocketState::initCCRate", DataRateValue(DataRate(LEAF_SERVER_CAPACITY)));
-		Config::SetDefault("ns3::TcpSocketState::minCCRate", DataRateValue(DataRate("100Mbps")));
-		Config::SetDefault("ns3::TcpSocketState::maxCCRate", DataRateValue(DataRate(LEAF_SERVER_CAPACITY)));
-		Config::SetDefault("ns3::TcpSocketState::AI", DataRateValue(DataRate("100Mbps")));
-		Config::SetDefault("ns3::TcpSocketState::HighAI", DataRateValue(DataRate("150Mbps")));
-		Config::SetDefault("ns3::TcpSocketState::useTimely", BooleanValue(true));
-		Config::SetDefault("ns3::TcpSocketState::baseRtt", TimeValue(MicroSeconds(linkLatency * 4 * 2 + 2 * double(PACKET_SIZE * 8) / (LEAF_SERVER_CAPACITY))));
-		// Config::SetDefault("ns3::TcpSocketState::TimelyTlow", UintegerValue((linkLatency*4*2*1.5)*1000)); // in nanoseconds
-		Config::SetDefault ("ns3::Ipv4GlobalRouting::FlowEcmpRouting", BooleanValue(true));
-		Config::SetDefault("ns3::GenQueueDisc::nPrior", UintegerValue(nPrior));
-		Config::SetDefault("ns3::GenQueueDisc::RoundRobin", UintegerValue(1));
-		Config::SetDefault("ns3::GenQueueDisc::StrictPriority", UintegerValue(0));
-		handle = tc.SetRootQueueDisc ("ns3::GenQueueDisc");
-		cid = tc.AddQueueDiscClasses (handle, nPrior , "ns3::QueueDiscClass");
-		for (uint32_t num = 0; num < nPrior; num++) {
-			tc.AddChildQueueDisc (handle, cid[num], "ns3::FifoQueueDisc");
-		}
-		break;
-	case POWERTCP:
-		Config::SetDefault("ns3::TcpL4Protocol::SocketType", TypeIdValue (ns3::TcpAdvanced::GetTypeId()));
-		// Config::SetDefault("ns3::TcpSocketBase::Sack", BooleanValue(false));
-		Config::SetDefault("ns3::TcpSocketState::initCCRate", DataRateValue(DataRate(LEAF_SERVER_CAPACITY)));
-		Config::SetDefault("ns3::TcpSocketState::minCCRate", DataRateValue(DataRate("100Mbps")));
-		Config::SetDefault("ns3::TcpSocketState::maxCCRate", DataRateValue(DataRate(LEAF_SERVER_CAPACITY)));
-		Config::SetDefault("ns3::TcpSocketState::AI", DataRateValue(DataRate("100Mbps")));
-		Config::SetDefault("ns3::TcpSocketState::mThreshHpcc", UintegerValue(5));
-		Config::SetDefault("ns3::TcpSocketState::fastReactHpcc", BooleanValue(true));
-		Config::SetDefault("ns3::TcpSocketState::sampleFeedbackHpcc", BooleanValue(false));
-		Config::SetDefault("ns3::TcpSocketState::usePowerTcp", BooleanValue(true));
-		Config::SetDefault("ns3::TcpSocketState::multipleRateHpcc", BooleanValue(false));
-		Config::SetDefault("ns3::TcpSocketState::targetUtil", DoubleValue(0.95));
-		Config::SetDefault("ns3::TcpSocketState::baseRtt", TimeValue(MicroSeconds(linkLatency * 4 * 2 + 2 * double(PACKET_SIZE * 8) / (LEAF_SERVER_CAPACITY))));
-		Config::SetDefault ("ns3::Ipv4GlobalRouting::FlowEcmpRouting", BooleanValue(true));
-		Config::SetDefault("ns3::GenQueueDisc::nPrior", UintegerValue(nPrior));
-		Config::SetDefault("ns3::GenQueueDisc::RoundRobin", UintegerValue(1));
-		Config::SetDefault("ns3::GenQueueDisc::StrictPriority", UintegerValue(0));
-		handle = tc.SetRootQueueDisc ("ns3::GenQueueDisc");
-		cid = tc.AddQueueDiscClasses (handle, nPrior , "ns3::QueueDiscClass");
-		for (uint32_t num = 0; num < nPrior; num++) {
-			tc.AddChildQueueDisc (handle, cid[num], "ns3::FifoQueueDisc");
-		}
-		break;
-	case THETAPOWERTCP:
-		Config::SetDefault("ns3::TcpL4Protocol::SocketType", TypeIdValue (ns3::TcpAdvanced::GetTypeId()));
-		// Config::SetDefault("ns3::TcpSocketBase::Sack", BooleanValue(false));
-		Config::SetDefault("ns3::TcpSocketState::initCCRate", DataRateValue(DataRate(LEAF_SERVER_CAPACITY)));
-		Config::SetDefault("ns3::TcpSocketState::minCCRate", DataRateValue(DataRate("100Mbps")));
-		Config::SetDefault("ns3::TcpSocketState::maxCCRate", DataRateValue(DataRate(LEAF_SERVER_CAPACITY)));
-		Config::SetDefault("ns3::TcpSocketState::AI", DataRateValue(DataRate("100Mbps")));
-		Config::SetDefault("ns3::TcpSocketState::mThreshHpcc", UintegerValue(5));
-		Config::SetDefault("ns3::TcpSocketState::fastReactHpcc", BooleanValue(false));
-		Config::SetDefault("ns3::TcpSocketState::sampleFeedbackHpcc", BooleanValue(false));
-		Config::SetDefault("ns3::TcpSocketState::useThetaPowerTcp", BooleanValue(true));
-		Config::SetDefault("ns3::TcpSocketState::multipleRateHpcc", BooleanValue(false));
-		Config::SetDefault("ns3::TcpSocketState::targetUtil", DoubleValue(0.95));
-		Config::SetDefault("ns3::TcpSocketState::baseRtt", TimeValue(MicroSeconds(linkLatency * 4 * 2 + 2 * double(PACKET_SIZE * 8) / (LEAF_SERVER_CAPACITY))));
-		Config::SetDefault ("ns3::Ipv4GlobalRouting::FlowEcmpRouting", BooleanValue(true));
-		Config::SetDefault("ns3::GenQueueDisc::nPrior", UintegerValue(nPrior));
-		Config::SetDefault("ns3::GenQueueDisc::RoundRobin", UintegerValue(1));
-		Config::SetDefault("ns3::GenQueueDisc::StrictPriority", UintegerValue(0));
-		handle = tc.SetRootQueueDisc ("ns3::GenQueueDisc");
-		cid = tc.AddQueueDiscClasses (handle, nPrior , "ns3::QueueDiscClass");
-		for (uint32_t num = 0; num < nPrior; num++) {
-			tc.AddChildQueueDisc (handle, cid[num], "ns3::FifoQueueDisc");
-		}
-		break;
-	default:
-		std::cout << "Error in CC configuration" << std::endl;
-		return 0;
-	}
+	Config::SetDefault ("ns3::RedQueueDisc::UseEcn", BooleanValue (true));
+	Config::SetDefault ("ns3::RedQueueDisc::QW", DoubleValue (1.0));
+	Config::SetDefault ("ns3::RedQueueDisc::MinTh", DoubleValue (RedMinTh * PACKET_SIZE));
+	Config::SetDefault ("ns3::RedQueueDisc::MaxTh", DoubleValue (RedMaxTh * PACKET_SIZE));
+	Config::SetDefault ("ns3::RedQueueDisc::MaxSize", QueueSizeValue (QueueSize ("100MB"))); // This is just for initialization. The buffer management algorithm will take care of the rest.
+	Config::SetDefault ("ns3::RedQueueDisc::LInterm", DoubleValue (0.0));
+	Config::SetDefault ("ns3::RedQueueDisc::UseHardDrop", BooleanValue (false));
+	Config::SetDefault ("ns3::RedQueueDisc::Gentle", BooleanValue (false));
+	Config::SetDefault ("ns3::RedQueueDisc::MeanPktSize", UintegerValue (PACKET_SIZE));
+
+
+	Config::SetDefault("ns3::GenQueueDisc::nPrior", UintegerValue(nPrior));
+	Config::SetDefault("ns3::GenQueueDisc::RoundRobin", UintegerValue(1));
+	Config::SetDefault("ns3::GenQueueDisc::StrictPriority", UintegerValue(0));
+	handle = tc.SetRootQueueDisc ("ns3::GenQueueDisc");
+	cid = tc.AddQueueDiscClasses (handle, 8 , "ns3::QueueDiscClass");
+	tc.AddChildQueueDisc (handle, cid[0], "ns3::FifoQueueDisc"); // acks go here
+	tc.AddChildQueueDisc (handle, cid[1], "ns3::FifoQueueDisc"); // Cubic goes here
+	tc.AddChildQueueDisc (handle, cid[2], "ns3::RedQueueDisc"); // Dctcp goes here
+	tc.AddChildQueueDisc (handle, cid[3], "ns3::FifoQueueDisc"); // ThetaPowerTcp goes here
+	tc.AddChildQueueDisc (handle, cid[4], "ns3::FifoQueueDisc");
+	tc.AddChildQueueDisc (handle, cid[5], "ns3::FifoQueueDisc");
+	tc.AddChildQueueDisc (handle, cid[6], "ns3::FifoQueueDisc");
+	tc.AddChildQueueDisc (handle, cid[7], "ns3::FifoQueueDisc");
+
+
 
 	NodeContainer spines;
 	spines.Create (SPINE_COUNT);
@@ -674,32 +532,82 @@ main (int argc, char *argv[])
 	NodeContainer servers[LEAF_COUNT];
 	Ipv4InterfaceContainer serverIpv4[LEAF_COUNT];
 
-	// std::string TcpMixNames[3] = {"ns3::TcpCubic", "ns3::TcpDctcp", "ns3::TcpWien"};
-	// uint32_t mixRatio[2]={cubicMix,dctcpMix};
-	for (uint32_t i = 0; i < LEAF_COUNT; i++) {
-		servers[i].Create (SERVER_COUNT);
-		// if (multiQueueExp){
-		// 	for (uint32_t k = 0; k < 3; k++){
-		// 		for (uint32_t j = 0; j < SERVER_COUNT/3; j++){
-		// 			TypeId tid = TypeId::LookupByName (TcpMixNames[k]);
-		// 			std::stringstream nodeId;
-		// 			nodeId << servers[i].Get (j)->GetId ();
-		// 			std::string specificNode = "/NodeList/" + nodeId.str () + "/$ns3::TcpL4Protocol/SocketType";
-		// 			Config::Set (specificNode, TypeIdValue (tid));
-		// 		}
-		// 	}
-		// }
-	}
+	NodeContainer serversCubic[LEAF_COUNT];
+	NodeContainer serversDctcp[LEAF_COUNT];
+	NodeContainer serversPower[LEAF_COUNT];
 
 	InternetStackHelper internet;
 	Ipv4GlobalRoutingHelper globalRoutingHelper;
 	internet.SetRoutingHelper (globalRoutingHelper);
 
+	/*In all the leaves 0 to SERVER_COUNT/3 use Cubic, SERVER_COUNT/3 to 2*SERVER_COUNT/3 use Dctcp and the rest use ThetaPowerTcp*/
+	for (uint32_t i = 0; i < LEAF_COUNT; i++) {
+		servers[i].Create (SERVER_COUNT);
+		internet.Install(servers[i]);
+		uint32_t start = 0;
+		for (uint32_t j = start; j < 16; j++) { // Make sure that SERVER_COUNT is divisible by 3.
+			serversCubic[i].Add(servers[i].Get(j));
+			TypeId tid = TypeId::LookupByName ("ns3::TcpCubic");
+			std::stringstream nodeId;
+			nodeId << servers[i].Get (j)->GetId ();
+			std::string specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpL4Protocol/SocketType";
+			Config::Set (specificNode, TypeIdValue(ns3::TcpCubic::GetTypeId()));
+			// std::cout << Config::SetFailSafe (specificNode, TypeIdValue (ns3::TcpCubic::GetTypeId())) << " " << nodeId.str() << std::endl;
+		}
+		start += 16;
+		for (uint32_t j = start; j < 24; j++) { // Make sure that SERVER_COUNT is divisible by 3.
+			serversDctcp[i].Add(servers[i].Get(j));
+			TypeId tid = TypeId::LookupByName ("ns3::TcpDctcp");
+			std::stringstream nodeId;
+			nodeId << servers[i].Get (j)->GetId ();
+			std::string specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpL4Protocol/SocketType";
+			// std::cout << Config::SetFailSafe (specificNode, TypeIdValue (ns3::TcpDctcp::GetTypeId())) << " " << nodeId.str() << std::endl;
+			Config::Set (specificNode, TypeIdValue (ns3::TcpDctcp::GetTypeId()));
+			// std::cout << Config::SetFailSafe (specificNode, TypeIdValue (tid)) << " " << nodeId.str() << std::endl;
+			specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketBase/UseEcn";
+			Config::Set (specificNode, StringValue ("On"));
+		}
+		start += 8;
+		for (uint32_t j = start; j < 32; j++) { // Make sure that SERVER_COUNT is divisible by 3.
+			serversPower[i].Add(servers[i].Get(j));
+			TypeId tid = TypeId::LookupByName ("ns3::TcpAdvanced");
+			std::stringstream nodeId;
+			nodeId << servers[i].Get (j)->GetId ();
+			std::string specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpL4Protocol/SocketType";
+			Config::Set (specificNode, TypeIdValue (ns3::TcpAdvanced::GetTypeId()));
+
+			// specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketBase/Sack";
+			// Config::Set (specificNode, BooleanValue(false));
+			specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketState/initCCRate";
+			Config::Set (specificNode, DataRateValue(DataRate(LEAF_SERVER_CAPACITY)));
+			specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketState/minCCRate";
+			Config::Set (specificNode, DataRateValue(DataRate("100Mbps")));
+			specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketState/maxCCRate";
+			Config::Set (specificNode, DataRateValue(DataRate(LEAF_SERVER_CAPACITY)));
+			specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketState/AI";
+			Config::Set (specificNode, DataRateValue(DataRate("100Mbps")));
+			specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketState/mThreshHpcc";
+			Config::Set (specificNode, UintegerValue(5));
+			specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketState/fastReactHpcc";
+			Config::Set (specificNode, BooleanValue(true));
+			specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketState/sampleFeedbackHpcc";
+			Config::Set (specificNode, BooleanValue(false));
+			specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketState/useThetaPowerTcp";
+			Config::Set (specificNode, BooleanValue(true));
+			specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketState/multipleRateHpcc";
+			Config::Set (specificNode, BooleanValue(false));
+			specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketState/targetUtil";
+			Config::Set (specificNode, DoubleValue(0.95));
+			specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketState/baseRtt";
+			Config::Set (specificNode, TimeValue(MicroSeconds(linkLatency * 4 * 2 + 2 * double(PACKET_SIZE * 8) / (LEAF_SERVER_CAPACITY))));
+		}
+	}
+
 	internet.Install(spines);
 	internet.Install(leaves);
-	for (uint32_t i = 0; i < LEAF_COUNT; i++) {
-		internet.Install(servers[i]);
-	}
+	// for (uint32_t i = 0; i<LEAF_COUNT; i++){
+	// 	internet.Install(servers[i]);
+	// }
 
 	PointToPointHelper p2p;
 	Ipv4AddressHelper ipv4;
@@ -721,7 +629,6 @@ main (int argc, char *argv[])
 	uint32_t leafPortId[LEAF_COUNT] = {0};
 	uint32_t spinePortId[SPINE_COUNT] = {0};
 
-
 	/*Server <--> Leaf*/
 	ipv4.SetBase ("10.1.0.0", "255.255.252.0");
 	p2p.SetDeviceAttribute ("DataRate", DataRateValue (DataRate (LEAF_SERVER_CAPACITY)));
@@ -735,7 +642,6 @@ main (int argc, char *argv[])
 			NetDeviceContainer netDeviceContainer = p2p.Install (nodeContainer);
 			QueueDiscContainer queueDiscs;
 			queueDiscs = tc.Install(netDeviceContainer.Get(0));
-			ToRQueueDiscs[leaf].Add(queueDiscs.Get(0));
 			Ptr<GenQueueDisc> genDisc = DynamicCast<GenQueueDisc> (queueDiscs.Get (0));
 			genDisc->SetPortId(leafPortId[leaf]++);
 			switch (algorithm) {
@@ -790,19 +696,6 @@ main (int argc, char *argv[])
 					genDisc->alphas[n] = alpha_values[n];
 				}
 				break;
-			case MYCC:
-				std::cout << "enter mycc server to leaf " << std::endl;
-				genDisc->setNPrior(nPrior); // Not needed, but anyway copy pasting :P IMPORTANT. This will also trigger "alphas = new ..."
-				genDisc->setPortBw(leafServerCapacity);
-				genDisc->SetSharedMemory(sharedMemoryLeaf[leaf]);
-				genDisc->SetBufferAlgorithm(ABM);
-				for (uint32_t n = 0; n < nPrior; n++) {
-					genDisc->alphas[n] = alpha_values[n];
-				}
-			
-				//genDisc->SetAttribute("predict",BooleanValue(true));
-				//genDisc->TraceConnectWithoutContext("getPrediction", MakeBoundCallback(&getPrediction, rf[leaf], castInteger));
-				break;
 			default:
 				std::cout << "Error in buffer management configuration. Exiting!";
 				return 0;
@@ -836,7 +729,6 @@ main (int argc, char *argv[])
 				NetDeviceContainer netDeviceContainer = p2p.Install (nodeContainer);
 				QueueDiscContainer queueDiscs = tc.Install(netDeviceContainer);
 				northQueues[leaf].Add(queueDiscs.Get(0));
-				ToRQueueDiscs[leaf].Add(queueDiscs.Get(0));
 				Ptr<GenQueueDisc> genDisc[2];
 				genDisc[0] = DynamicCast<GenQueueDisc> (queueDiscs.Get (0));
 				genDisc[0]->SetSharedMemory(sharedMemoryLeaf[leaf]);
@@ -897,19 +789,6 @@ main (int argc, char *argv[])
 							genDisc[i]->alphas[n] = alpha_values[n];
 						}
 						break;
-					case MYCC:
-						std::cout << "enter mycc leaf to spine" << std::endl;
-						genDisc[i]->setNPrior(nPrior); // IMPORTANT. This will also trigger "alphas = new ..."
-						genDisc[i]->setPortBw(leafServerCapacity);
-						genDisc[i]->SetSharedMemory(sharedMemoryLeaf[leaf]);
-						genDisc[i]->SetBufferAlgorithm(MYCC);
-						for (uint32_t n = 0; n < nPrior; n++) {
-							genDisc[i]->alphas[n] = alpha_values[n];
-						}
-			
-						//genDisc->SetAttribute("predict",BooleanValue(true));
-						//genDisc->TraceConnectWithoutContext("getPrediction", MakeBoundCallback(&getPrediction, rf[leaf], castInteger));
-						break;
 					default:
 						std::cout << "Error in buffer management configuration. Exiting!";
 						return 0;
@@ -920,16 +799,16 @@ main (int argc, char *argv[])
 		}
 	}
 
-	double oversubRatio = static_cast<double>(SERVER_COUNT * LEAF_SERVER_CAPACITY) / (SPINE_LEAF_CAPACITY * SPINE_COUNT * LINK_COUNT);
-	NS_LOG_INFO ("Over-subscription ratio: " << oversubRatio);
-	NS_LOG_INFO ("Initialize CDF table");
+	// double oversub_wrt_each = static_cast<double>(SERVER_COUNT * LEAF_SERVER_CAPACITY) / (SPINE_LEAF_CAPACITY * SPINE_COUNT * LINK_COUNT)/3;
+
 	struct cdf_table* cdfTable = new cdf_table ();
 	init_cdf (cdfTable);
 	load_cdf (cdfTable, cdfFileName.c_str ());
 	NS_LOG_INFO ("Calculating request rate");
-	double requestRate = load * LEAF_SERVER_CAPACITY * SERVER_COUNT / oversubRatio / (8 * avg_cdf (cdfTable)) / SERVER_COUNT;
-	NS_LOG_INFO ("Average request rate: " << requestRate << " per second");
-	NS_LOG_INFO ("Initialize random seed: " << randomSeed);
+
+	double requestRate_Cubic = loadCubic * SPINE_LEAF_CAPACITY * SPINE_COUNT * LINK_COUNT / (8 * avg_cdf (cdfTable)) / (serversCubic[0].GetN());
+	double requestRate_Dctcp = loadDctcp * SPINE_LEAF_CAPACITY * SPINE_COUNT * LINK_COUNT / (8 * avg_cdf (cdfTable)) / (serversDctcp[0].GetN());
+	double requestRate_Power = loadPower * SPINE_LEAF_CAPACITY * SPINE_COUNT * LINK_COUNT / (8 * avg_cdf (cdfTable)) / (serversPower[0].GetN());
 
 	if (randomSeed == 0)
 	{
@@ -946,21 +825,25 @@ main (int argc, char *argv[])
 	for (uint32_t i = 0; i < SERVER_COUNT * LEAF_COUNT; i++)
 		PORT_START[i] = 4444;
 
-	for (int fromLeafId = 0; fromLeafId < LEAF_COUNT; fromLeafId ++)
+	for (int fromLeafId = 0; fromLeafId < 2; fromLeafId ++)
 	{
-		install_applications(fromLeafId, servers, requestRate, cdfTable, flowCount, SERVER_COUNT, LEAF_COUNT, START_TIME, END_TIME, FLOW_LAUNCH_END_TIME, nPrior);
+		//cubic cc=0 other=1
+		install_applications(fromLeafId, serversCubic, requestRate_Cubic, cdfTable, flowCount, serversCubic[0].GetN(), LEAF_COUNT, START_TIME, END_TIME, FLOW_LAUNCH_END_TIME, 1,0);
+	}
+	for (int fromLeafId = 0; fromLeafId < 2; fromLeafId ++)
+	{
+		install_applications(fromLeafId, serversDctcp, requestRate_Dctcp, cdfTable, flowCount, serversDctcp[0].GetN(), LEAF_COUNT, START_TIME, END_TIME, FLOW_LAUNCH_END_TIME, 2,1);
+	}
+	for (int fromLeafId = 0; fromLeafId < 2; fromLeafId ++)
+	{
+		install_applications(fromLeafId, serversPower, requestRate_Power, cdfTable, flowCount, serversPower[0].GetN(), LEAF_COUNT, START_TIME, END_TIME, FLOW_LAUNCH_END_TIME, 3,1);
 		if (queryRequestRate > 0 && requestSize > 0) {
-			install_applications_incast(fromLeafId, servers, queryRequestRate, requestSize, cdfTable, flowCount, SERVER_COUNT, LEAF_COUNT, QUERY_START_TIME, END_TIME, FLOW_LAUNCH_END_TIME, nPrior);
+			install_applications_incast(fromLeafId, serversPower, queryRequestRate, requestSize, cdfTable, flowCount, serversPower[0].GetN(), LEAF_COUNT, QUERY_START_TIME, END_TIME, FLOW_LAUNCH_END_TIME, 3,0);
 		}
 	}
-	// std::cout << "Total flows: " << flowCount/2 << std::endl;
 
-	if (!torPrintall) {
-		Simulator::Schedule(Seconds(START_TIME), InvokeToRStats, torStats, BufferSize, 0, printDelay);
-	}
-	else {
-		Simulator::Schedule(Seconds(START_TIME), InvokePerPortToRStats, torStats, BufferSize, 0, printDelay);
-	}
+
+	Simulator::Schedule(Seconds(START_TIME), InvokeToRStats, torStats, BufferSize, 0, printDelay);
 
 
 	// AsciiTraceHelper ascii;

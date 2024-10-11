@@ -141,7 +141,9 @@ LOAD=0.4
 BURST_SIZES=0.5
 TCP=$DCTCP
 ALG=$CREDENCE
-ERRORS=(0.001 0.005)
+#ERRORS=(0.001 0.005)
+ERRORS=(0.001)
+
 for ERROR_PROB in ${ERRORS[@]};do
 	BURST_SIZE=$(python3 -c "print($BURST_SIZES*$BUFFER)")
 	FLOWFILE="$DUMP_DIR/fct-$TCP-$ALG-$LOAD-$BURST_SIZES-$BURST_FREQ-$ERROR_PROB.fct"
@@ -153,7 +155,7 @@ for ERROR_PROB in ${ERRORS[@]};do
 		echo "running $N experiment(s)..."
 	done
 	if [[ $EXP == 1 ]];then
-		(time ./waf --run "credence-evaluation --rfModelFile=$RF_FILE --errorProb=$ERROR_PROB --load=$LOAD --StartTime=$START_TIME --EndTime=$END_TIME --FlowLaunchEndTime=$FLOW_END_TIME --serverCount=$SERVERS --spineCount=$SPINES --leafCount=$LEAVES --linkCount=$LINKS --spineLeafCapacity=$LEAF_SPINE_CAP --leafServerCapacity=$SERVER_LEAF_CAP --linkLatency=$LATENCY --TcpProt=$TCP --BufferSize=$BUFFER --statBuf=$STATIC_BUFFER --algorithm=$ALG --RedMinTh=$RED_MIN --RedMaxTh=$RED_MAX --request=$BURST_SIZE --queryRequestRate=$BURST_FREQ --nPrior=$N_PRIO --alphasFile=$ALPHAFILE --cdfFileName=$CDFFILE --alphaUpdateInterval=$ALPHA_UPDATE_INT --fctOutFile=$FLOWFILE --torOutFile=$TORFILE --averageIntervalNano=$AVERAGE_INTERVAL --randomSeed=$RANDOM_SEED --enableStats=$ENABLE_STATS --enableLqdTracing=$ENABLE_LQD_TRCING"; echo "$FLOWFILE")&
+		(time ./waf --run "credence-evaluation_muti --rfModelFile=$RF_FILE --errorProb=$ERROR_PROB --load=$LOAD --StartTime=$START_TIME --EndTime=$END_TIME --FlowLaunchEndTime=$FLOW_END_TIME --serverCount=$SERVERS --spineCount=$SPINES --leafCount=$LEAVES --linkCount=$LINKS --spineLeafCapacity=$LEAF_SPINE_CAP --leafServerCapacity=$SERVER_LEAF_CAP --linkLatency=$LATENCY --TcpProt=$TCP --BufferSize=$BUFFER --statBuf=$STATIC_BUFFER --algorithm=$ALG --RedMinTh=$RED_MIN --RedMaxTh=$RED_MAX --request=$BURST_SIZE --queryRequestRate=$BURST_FREQ --nPrior=$N_PRIO --alphasFile=$ALPHAFILE --cdfFileName=$CDFFILE --alphaUpdateInterval=$ALPHA_UPDATE_INT --fctOutFile=$FLOWFILE --torOutFile=$TORFILE --averageIntervalNano=$AVERAGE_INTERVAL --randomSeed=$RANDOM_SEED --enableStats=$ENABLE_STATS --enableLqdTracing=$ENABLE_LQD_TRCING"; echo "$FLOWFILE")&
 		sleep 10
 	fi
 done

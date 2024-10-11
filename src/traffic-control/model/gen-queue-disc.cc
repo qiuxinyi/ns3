@@ -33,6 +33,7 @@
 #include "ns3/ppp-header.h"
 #include "ns3/flow-id-tag.h"
 #include "ns3/custom-priority-tag.h"
+#include "ns3/custom-cc-tag.h"
 #include "ns3/unsched-tag.h"
 #include "ns3/feedback-tag.h"
 #include "ns3/bufferlog-tag.h"
@@ -250,7 +251,7 @@ void GenQueueDisc::InvokeUpdates(double nanodelay) {
 
 bool GenQueueDisc::MyCCBufferManagement(uint32_t priority, Ptr<Packet> packet) {
   uint32_t bufferSize =sharedMemory->GetSharedBufferSize();
-  std::cout << "enter MyCCBufferManagement "<<priority << " DeqRate[priority]: "<< DeqRate[priority] << " bufferSize: "<<bufferSize <<" PacketNum: "<<PacketNum[priority]<<std::endl;
+  //std::cout << "enter MyCCBufferManagement "<<priority << " DeqRate[priority]: "<< DeqRate[priority] << " bufferSize: "<<bufferSize <<" PacketNum: "<<PacketNum[priority]<<std::endl;
   double alpha = 1;
   
   /* A tag is attached by the end-hosts on all the packets which are unscheduled (first RTT bytes). Find the tag first.*/
@@ -686,6 +687,7 @@ GenQueueDisc::DoEnqueue (Ptr<QueueDiscItem> item)
 
   Ptr<Packet> packet = item->GetPacket();
   uint32_t p = 0;
+  uint32_t mycc = 0;
 
   bool found;
   MyPriorityTag a;
@@ -693,7 +695,15 @@ GenQueueDisc::DoEnqueue (Ptr<QueueDiscItem> item)
   if (found){
     p = a.GetPriority();
   }
-  std::cout << "doenqueue: "<<p <<" num: "<<PacketNum[p]<< std::endl;
+
+  bool ccfound;
+  MyCcTag c;
+  ccfound = packet->PeekPacketTag(c);
+  if (ccfound){
+    mycc = c.GetCc();
+  }
+  std::cout << "doenqueue: "<<mycc <<" num: "<<PacketNum[p]<< std::endl;
+
   if (p >= nPrior)
     p = uint32_t(nPrior - 1);
 
@@ -840,7 +850,7 @@ GenQueueDisc::DoDequeue (void)
   if (item) {
 
     Ptr<Packet> packet = item->GetPacket();
-    std::cout << "dodequeue: "<<dequeueIndex<<" num:"<<PacketNum[dequeueIndex] << std::endl;
+    //std::cout << "dodequeue: "<<dequeueIndex<<" num:"<<PacketNum[dequeueIndex] << std::endl;
     // decrease the num of packet
     PacketNum[dequeueIndex]--;
     m_txTrace(packet, dequeueIndex, this); // trace dequeue event from dequeueIndex queue

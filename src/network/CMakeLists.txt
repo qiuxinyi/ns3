@@ -74,6 +74,7 @@ set(source_files
     utils/bufferlog-tag.cc
     utils/custom-header.cc
     utils/custom-priority-tag.cc
+    utils/custom-cc-tag.cc
     utils/feedback-tag.cc
     utils/interface-tag.cc
     utils/int-header.cc
@@ -163,6 +164,7 @@ set(header_files
     utils/bufferlog-tag.h
     utils/custom-header.h
     utils/custom-priority-tag.h
+    utils/custom-cc-tag.h
     utils/feedback-tag.h
     utils/interface-tag.h
     utils/int-header.h
