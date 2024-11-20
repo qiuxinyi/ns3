@@ -37,6 +37,9 @@ public:
 	bool EnqueueBuffer(uint32_t size, uint32_t port, uint32_t queue);
 	void DequeueBuffer(uint32_t size, uint32_t port, uint32_t queue);
 
+	bool myEnqueueBuffer(uint32_t size, uint32_t port, uint32_t queue,uint32_t mycc);
+	void myDequeueBuffer(uint32_t size, uint32_t port, uint32_t queue,uint32_t mycc);
+
 	void AddN(uint32_t group){N[group]++;}
 	void SubN(uint32_t group){N[group]--;}
 
@@ -89,6 +92,7 @@ public:
 	uint32_t GetRemainingBuffer(){return RemainingBuffer;}
 	uint32_t GetPerPriorityOccupied(uint32_t priority){return OccupiedBufferPriority[priority];}
 	uint32_t GetQueueSize(uint32_t port, uint32_t queue);
+	uint32_t GetCCQueueSize(uint32_t port, uint32_t queue,uint32_t mycc);
 	uint32_t getAverageQueueLength(uint32_t port, uint32_t queue){
 		return averageQueueLength[port][queue];
 	}
@@ -133,6 +137,7 @@ private:
 	uint32_t numQueues;
 	uint32_t switchId;
 	Time LastUpdatedAverage[100][8];
+	uint32_t ccQueueLength[100][8][10];//根据cc的总体队列长度  portId,priority,cc
 	Time LastUpdatedAverageTotal;
 	Time AverageInterval;
 

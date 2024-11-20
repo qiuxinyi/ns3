@@ -77,7 +77,7 @@ except:
 	incastmedfct =  0 # 10
 
 try:
-	longFlows=flowDf[flowDf["flowsize"]>=30000000]
+	longFlows=flowDf[flowDf["flowsize"]>=3000000]
 	longFlows=list(longFlows["slowdown"])
 	longFlows.sort()
 	long999fct = longFlows[int(len(longFlows)*0.999)-1] # 11
@@ -104,22 +104,23 @@ except:
 # "priority5 " 11
 # "priority6 " 12
 # "priority7 " 13
-torDf=pd.read_csv(torFile,delimiter=' ',usecols=[1,2,3,4,5,6,7,8,9,10,11,12,13],names=["time","tor","bufferSizeMB","occupiedBufferPct","uplinkThroughput","priority0","priority1","priority2","priority3","priority4","priority5","priority6","priority7"],header=1)
-torDf=torDf[(torDf["time"]>10)&(torDf["time"]<13)]
+# torDf=pd.read_csv(torFile,delimiter=' ',usecols=[1,2,3,4,5,6,7,8,9,10,11,12,13],names=["time","tor","bufferSizeMB","occupiedBufferPct","uplinkThroughput","priority0","priority1","priority2","priority3","priority4","priority5","priority6","priority7"],header=1)
+# torDf=torDf[(torDf["time"]>10)&(torDf["time"]<13)]
 
-throughput = list(torDf["uplinkThroughput"])
-throughput.sort()
-avgTh = np.mean(throughput) # 16
-medTh = np.median(throughput) # 17
+# throughput = list(torDf["uplinkThroughput"])
+# throughput.sort()
+# avgTh = np.mean(throughput) # 16
+# medTh = np.median(throughput) # 17
 
-buffer = list(torDf["occupiedBufferPct"])
-buffer.sort()
-bufmax = buffer[len(buffer)-1] # 18
-buf999 = buffer[int(len(buffer)*0.999)-1] # 19
-buf99 = buffer[int(len(buffer)*0.99)-1] # 20
-buf95 = buffer[int(len(buffer)*0.95)-1] # 21
-avgBuf = np.mean(buffer) # 22
-medBuf = np.median(buffer) # 23
+# buffer = list(torDf["occupiedBufferPct"])
+# buffer.sort()
+# bufmax = buffer[len(buffer)-1] # 18
+# buf999 = buffer[int(len(buffer)*0.999)-1] # 19
+# buf99 = buffer[int(len(buffer)*0.99)-1] # 20
+# buf95 = buffer[int(len(buffer)*0.95)-1] # 21
+# avgBuf = np.mean(buffer) # 22
+# medBuf = np.median(buffer) # 23
 
 # print("short999fct","short99fct","short95fct","shortavgfct","shortmedfct","incast999fct","incast99fct","incast95fct","incastavgfct","incastmedfct","long999fct","long99fct","long95fct","longavgfct","longmedfct","avgTh","medTh","bufmax","buf999","buf99","buf95","avgBuf","medBuf")
-print(short999fct,short99fct,short95fct,shortavgfct,shortmedfct,incast999fct,incast99fct,incast95fct,incastavgfct,incastmedfct,long999fct,long99fct,long95fct,longavgfct,longmedfct,avgTh,medTh,bufmax,buf999,buf99,buf95,avgBuf,medBuf,load,burst,alg,tcp,scenario,nprio)
+#print(short999fct,short99fct,short95fct,shortavgfct,shortmedfct,incast999fct,incast99fct,incast95fct,incastavgfct,incastmedfct,long999fct,long99fct,long95fct,longavgfct,longmedfct,avgTh,medTh,bufmax,buf999,buf99,buf95,avgBuf,medBuf,load,burst,alg,tcp,scenario,nprio)
+print(short999fct,short99fct,short95fct,shortavgfct,shortmedfct,incast999fct,incast99fct,incast95fct,incastavgfct,incastmedfct,long999fct,long99fct,long95fct,longavgfct,longmedfct)

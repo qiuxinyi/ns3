@@ -8,6 +8,7 @@ FAB=102
 CS=103
 IB=104
 ABM=110
+MYCC=555
 
 RENO=0
 CUBIC=1
@@ -48,9 +49,9 @@ BUFFER=$(python3 -c "print(int($BUFFER_PER_PORT_PER_GBPS*1024*($SERVERS+$LINKS*$
 
 TCP=$CUBIC
 
-START_TIME=10
-END_TIME=24
-FLOW_END_TIME=13
+START_TIME=5
+END_TIME=7
+FLOW_END_TIME=6
 
 
 cd $NS3
@@ -81,8 +82,8 @@ DCTCPLOAD=0.1
 POWERLOAD=0.0
 TCP=1 #this wont be used anyway
 for CUBICLOAD in 0.1;do
-	for ALG in $DT $ABM;do
-		FLOW_END_TIME=13 #$(python3 -c "print(10+3*0.8/$LOAD)")
+	for ALG in $MYCC $ABM;do
+		FLOW_END_TIME=6 #$(python3 -c "print(10+3*0.8/$LOAD)")
 		FLOWFILE="$DUMP_DIR/fcts-multi-$TCP-$ALG-$CUBICLOAD-$BURST_SIZES-$BURST_FREQ.fct"
 		TORFILE="$DUMP_DIR/tor-multi-$TCP-$ALG-$CUBICLOAD-$BURST_SIZES-$BURST_FREQ.stat"
 		while [[ $(( $(ps aux | grep mycc-evaluation-multi-optimized | wc -l)+$(ps aux | grep evaluation-optimized | wc -l) )) -gt $N_CORES ]];do

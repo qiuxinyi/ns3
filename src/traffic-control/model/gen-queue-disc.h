@@ -140,6 +140,7 @@ private:
   Time firstSeen[101];
   Time lastAccepted[101];
   double numBytesSent[101];
+  uint32_t ccAcceptQueueLength[100][8][10];//根据cc接收到数据包的队列长度 cc
 
   /*at dequeue*/
   Time firstSeenQueue[11];
@@ -207,10 +208,19 @@ private:
 
   bool enableINT;
 
+  double time=0;
+  double preTime;
+  uint32_t queLenSum=0;
+  uint32_t sendCount[100][8][10]={1};
+  uint32_t shareOccuSum=0;
+  uint32_t ccQueLenSum[100][8][10]={1};
+  uint64_t performance[100][8][10]={1};
+
   TracedCallback<Ptr<const Packet>, uint32_t, bool, Ptr<GenQueueDisc>> m_rxTrace; // trace enqueue events
   TracedCallback<Ptr<const Packet>, uint32_t, Ptr<GenQueueDisc>> m_txTrace; // trace dequeue events
   TracedCallback<uint32_t, uint32_t, uint32_t, uint32_t,uint32_t> m_traceLQD; // trace LQD events
   TracedCallback<uint32_t, uint32_t, uint32_t, uint32_t, int &> m_getPrediction; // trace LQD events
+  TracedCallback<uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,double,uint32_t ,uint32_t > m_getCcRecord; // 最后两个是ccTag time，其余的和prediction的一样
   TracedCallback<uint32_t,uint32_t,uint32_t,uint32_t,uint64_t, double, uint32_t, uint32_t, uint32_t, uint32_t > m_arrival;
   TracedCallback<uint32_t,uint32_t,uint32_t,uint32_t,uint64_t, double, uint32_t, uint32_t, uint32_t, uint32_t> m_departure;
   Ptr<UniformRandomVariable> urv;

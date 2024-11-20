@@ -268,24 +268,19 @@ bool GenQueueDisc::MyCCBufferManagement(uint32_t priority, Ptr<Packet> packet) {
   uint32_t qlen = sharedMemory->GetQueueSize(portId,priority);
   uint32_t sharedOccupancy = sharedMemory->GetOccupiedBuffer();
   uint32_t ccQueueLength = sharedMemory->GetCCQueueSize(portId,priority,mycc);
-  //uint32_t avgsharedoccupancy = sharedMemory->getAverageOccupancy();
-  //uint32_t longestQueueLength = sharedMemory->GetQueueSize(sharedMemory->findLongestQueue(),1);
+  uint32_t avgsharedoccupancy = sharedMemory->getAverageOccupancy();
+  uint32_t longestQueueLength = sharedMemory->GetQueueSize(sharedMemory->findLongestQueue(),1);
   
 
     //std::cout << "enter MyCCBufferManagement "<<priority << " longestQueueLength: "<< longestQueueLength << " bufferSize: "<<bufferSize <<" numPorts: "<<numPorts<<std::endl;
   queLenSum+=qlen;
-  ccQueLenSum[portId][priority][mycc]=(ccQueLenSum[portId][priority][mycc]>>1)+(ccQueueLength>>1);
+  ccQueLenSum[portId][priority][mycc]+=ccQueueLength;
   shareOccuSum +=sharedOccupancy;
-  
-  if(time==0){
-    for(int po=0;po<100;po++){
-           for(int pr=0;pr<8;pr++){
-             for(int cc=0;cc<10;cc++){
-               performance[po][pr][cc]=1;
-             }
-           }
-         }
+  if(qlen>0){
+    queCount[portId][priority][mycc]++;
   }
+  
+
   time=Simulator::Now().GetSeconds();
   if (time-preTime>0.1){
        
@@ -305,50 +300,32 @@ bool GenQueueDisc::MyCCBufferManagement(uint32_t priority, Ptr<Packet> packet) {
         //   }
         // }
         // if(ccQueLenSum[portId][priority][0]!=0 || ccQueLenSum[portId][priority][1]!=0){
-        // std::cout << "0queueLenSum: "<<ccQueLenSum[portId][priority][0]/++sendCount[portId][priority][0] <<" 1queueLenSum: "
-        // <<ccQueLenSum[portId][priority][1]/++sendCount[portId][priority][1]<<" 0AcceptQueueLen: "<<ccAcceptQueueLength[portId][priority][0]/++sendCount[portId][priority][0]
-        // <<" 1AcceptQueueLen:: "<<ccAcceptQueueLength[portId][priority][1]/++sendCount[portId][priority][1]<<" time: "<<Simulator::Now().GetSeconds()<<" portId: "<<portId<<" priority: "<<priority<<std::endl;
+        // std::cout << "0queueLenSum: "<<ccQueLenSum[portId][priority][0]/++queCount[portId][priority][0] <<" 1queueLenSum: "
+        // <<ccQueLenSum[portId][priority][1]/++queCount[portId][priority][1]<<" 0AcceptQueueLen: "<<ccAcceptQueueLength[portId][priority][0]/++queCount[portId][priority][0]
+        // <<" 1AcceptQueueLen:: "<<ccAcceptQueueLength[portId][priority][1]/++queCount[portId][priority][1]<<" time: "<<Simulator::Now().GetSeconds()<<" portId: "<<portId<<" priority: "<<priority<<std::endl;
         // }
-    //     double result = (ccQueLenSum[portId][priority][1]*ccAcceptQueueLength[portId][priority][0]*1.0)/ (ccQueLenSum[portId][priority][0]*ccAcceptQueueLength[portId][priority][1]*1.0);
-    // //
-    //     if(result>50 || result<0.5){
-    //     std::cout << "result:"<<result<<std::endl;
-    //     }
-
-        //开始计算性能
-        for(int po=0;po<100;po++){
-          for(int pr=0;pr<8;pr++){
-            for(int cc=0;cc<10;cc++){
-              if(ccQueLenSum[po][pr][cc]!=0 && ccAcceptQueueLength[po][pr][cc]!=0){
-                  performance[po][pr][cc]=sendCount[po][pr][cc]*((sendCount[po][pr][0]+sendCount[po][pr][1])/ (ccQueLenSum[po][pr][1]+ccQueLenSum[po][pr][0]));
-                  std::cout << "performance: "<<performance[po][pr][cc]<<" portId: "<<po<<" priority: "<<pr<<" cc: "<<cc <<" ccAcceptQueueLength: "
-                  <<ccAcceptQueueLength[po][pr][cc]<<" sendCount: "<<sendCount[po][pr][cc]<<" sum sendCound: "<<sendCount[po][pr][0]+sendCount[po][pr][1]
-                  <<" sum count: "<<ccQueLenSum[po][pr][1]+ccQueLenSum[po][pr][0]<<std::endl;
-    
-                }
-                if(performance[po][pr][cc]==0){
-                  performance[po][pr][cc]=1;
-                }
-              }
-            }
-          }
 
 
-
-        //m_getCcRecord(queLenSum/totalCount, ccAcceptQueueLength[mycc]/sendCount[mycc], shareOccuSum/totalCount, ccQueLenSum[mycc]/sendCount[mycc],mycc,Simulator::Now().GetSeconds(), portId, priority);
+        if(ccQueLenSum[portId][priority][0]!=0 && ccQueLenSum[portId][priority][1]!=0 && ccAcceptQueueLength[portId][priority][1]!=0&& ccAcceptQueueLength[portId][priority][0]!=0){
+    double result = (ccQueLenSum[portId][priority][1]*ccAcceptQueueLength[portId][priority][0]*1.0)/ (ccQueLenSum[portId][priority][0]*ccAcceptQueueLength[portId][priority][1]*1.0);
+    if(result>100 || result<0.01){
+    std::cout << "result:"<<result<<std::endl;
+    }
+  }
+        //m_getCcRecord(queLenSum/totalCount, ccAcceptQueueLength[mycc]/queCount[mycc], shareOccuSum/totalCount, ccQueLenSum[mycc]/queCount[mycc],mycc,Simulator::Now().GetSeconds(), portId, priority);
         preTime=time;
         queLenSum=0;
         
-       
-         for(int po=0;po<100;po++){
-           for(int pr=0;pr<8;pr++){
-             for(int cc=0;cc<10;cc++){
-               ccQueLenSum[po][pr][mycc]=ccQueLenSum[po][pr][mycc]>>3;
-               sendCount[po][pr][mycc]=sendCount[po][pr][mycc]>>3;
-               ccAcceptQueueLength[po][pr][mycc]=ccAcceptQueueLength[po][pr][mycc]>>3;
-             }
-           }
-         }
+        shareOccuSum=0;
+        for(int po=0;po<100;po++){
+          for(int pr=0;pr<8;pr++){
+            for(int cc=0;cc<10;cc++){
+              ccQueLenSum[po][pr][mycc]=ccQueLenSum[po][pr][mycc]*0.3;
+              queCount[po][pr][mycc]=queCount[po][pr][mycc]*0.3;
+              ccAcceptQueueLength[po][pr][mycc]=ccAcceptQueueLength[po][pr][mycc]*0.3;
+            }
+          }
+        }
   }
   
   double alpha = 1;
@@ -392,11 +369,16 @@ bool GenQueueDisc::MyCCBufferManagement(uint32_t priority, Ptr<Packet> packet) {
 
   //c=Q/B
   double c=bufferSize*1.0/portBW;
-  if(mycc==0) {
-
-    double proportion = performance[portId][priority][mycc]/(performance[portId][priority][0]+performance[portId][priority][1]);
-    double queueSize = A*bufferSize*(portBW*proportion)/(DeqRate[priority]);
+  //std::cout <<" c: "<<c<<std::endl;
+  if(c>MyM) {
+    //only for cubic
+    double totalNum = PacketNum[0]+PacketNum[1]+1;
+    // for (int i=0;i<sizeof(PacketNum);i++){
+    //   totalNum +=PacketNum[i];
+    // }
+    double queueSize = A*bufferSize*(portBW*PacketNum[priority])/(DeqRate[priority]*(totalNum));
     if(currentSize>queueSize){
+      //std::cout << "cubic size not enough currentSize: "<<currentSize<<" queueSize: "<< queueSize<<" portBW: "<<portBW<<currentSize<<" totalNum: "<<totalNum<< std::endl;
       //return false;
     }else if(currentSize>0){
       
@@ -405,10 +387,12 @@ bool GenQueueDisc::MyCCBufferManagement(uint32_t priority, Ptr<Packet> packet) {
     }
     
   }else{
+    //only for bbr
+    double totalNum = PacketNum[0]+PacketNum[1]+1;
 
-    double totalNum = performance[portId][priority][0]+performance[portId][priority][1];
-    double queueSize = B*bufferSize*log10((DeqRate[priority]*(totalNum))/(portBW*performance[portId][priority][mycc]));
+    double queueSize = B*bufferSize*log10((DeqRate[priority]*(totalNum))/(portBW*PacketNum[priority]));
     if(currentSize>queueSize){
+      //std::cout << "size not enough currentSize: "<<currentSize<<" queueSize: "<< queueSize<<" portBW: "<<portBW<<currentSize<<" totalNum: "<<totalNum<< std::endl;
       //return false;
     }else if(currentSize>0){
       
@@ -458,8 +442,6 @@ bool GenQueueDisc::ActiveBufferManagement(uint32_t priority, Ptr<Packet> packet)
   // uint64_t currentSize = GetQueueDiscClass (priority)->GetQueueDisc ()->GetNBytes();
   uint64_t currentSize = sharedMemory->GetQueueSize(portId, priority);
 
-
-//计算拥塞的程度
   double satLevel = double(currentSize) / sat;
   if (satLevel > 1) {
     satLevel = 1;
@@ -1003,10 +985,7 @@ GenQueueDisc::DoDequeue (void)
     }
      
     if (GetCurrentSize().GetValue() + packet->GetSize() > staticBuffer) {
-      uint32_t size = item->GetPacket()->GetSize();
-      sharedMemory->myDequeueBuffer(size, portId, p,mycc);
-      //记录发送了多少数据包
-      sendCount[portId][p][mycc]+=size;
+      sharedMemory->myDequeueBuffer(item->GetPacket()->GetSize(), portId, p,mycc);
       sharedMemory->PerPriorityStatDeq(item->GetPacket()->GetSize(), p);
     }
 

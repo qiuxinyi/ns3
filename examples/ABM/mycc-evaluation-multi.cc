@@ -37,6 +37,7 @@
 # define CS 103
 # define IB 104
 # define ABM 110
+# define MYCC 555
 
 
 /*Congestion Control Algorithms*/
@@ -90,7 +91,7 @@ T rand_range (T min, T max)
 
 double baseRTTNano;
 double nicBw;
-void TraceMsgFinish (Ptr<OutputStreamWrapper> stream, double size, double start, bool incast, uint32_t prior, uint32_t cc )
+void TraceMsgFinish (Ptr<OutputStreamWrapper> stream, double size, double start, bool incast, uint32_t prior, uint32_t cc ) //这里进行数据的打印
 {
 	double fct, standalone_fct, slowdown;
 	fct = Simulator::Now().GetNanoSeconds() - start;
@@ -206,7 +207,7 @@ void install_applications_incast (int incastLeaf, NodeContainer* servers, double
 					bulksend->SetAttribute("sendAt", TimeValue(Seconds (startTime)));
 					bulksend->SetStartTime (startApp);
 					bulksend->SetStopTime (Seconds (END_TIME));
-					servers[txLeaf].Get (txServer)->AddApplication(bulksend);
+					//servers[txLeaf].Get (txServer)->AddApplication(bulksend);
 
 					PacketSinkHelper sink ("ns3::TcpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), port));
 					ApplicationContainer sinkApp = sink.Install (servers[incastLeaf].Get(incastServer));
@@ -239,11 +240,12 @@ void install_applications (int txLeaf, NodeContainer* servers, double requestRat
 		double startTime = START_TIME + poission_gen_interval (requestRate);
 		while (startTime < FLOW_LAUNCH_END_TIME && startTime > START_TIME)
 		{
+			//std::cout << "startTime: "<< startTime << " endTime: "<<END_TIME<<" FLOW_LAUNCH_END_TIME: "<<FLOW_LAUNCH_END_TIME<<std::endl;
 			// Permutation demand matrix
 			int rxLeaf = txLeaf + 1;
 			if (rxLeaf >= 2) {
 				rxLeaf = 0;
-			}
+			} 
 			// int rxLeaf=txLeaf;
 			// while (txLeaf==rxLeaf){
 			//     rxLeaf = get_target_leaf(LEAF_COUNT);
@@ -302,7 +304,11 @@ void install_applications (int txLeaf, NodeContainer* servers, double requestRat
 	}
 	// std::cout << "Finished installation of applications from leaf-"<< fromLeafId << std::endl;
 }
+void getCcRecord(uint32_t queueLength, uint32_t ccAcceptQueueLength, uint32_t sharedOccupancy,  uint32_t ccQueueLength, uint32_t mycc,double time,uint32_t portId,uint32_t priority){
 
+	std::cout << "queueLength: " << queueLength << " ccAcceptQueueLength:"<<ccAcceptQueueLength<<" sharedOccupancy: "<<sharedOccupancy<<" ccQueueLength: "<<ccQueueLength<<" mycc:"<<mycc<<" time"<<time<<" portId: " <<portId<<" priority:"<<priority<<std::endl;
+	
+}
 
 
 int
@@ -310,9 +316,9 @@ main (int argc, char *argv[])
 {
 	CommandLine cmd;
 
-	double START_TIME = 10;
-	double FLOW_LAUNCH_END_TIME = 13;
-	double END_TIME = 20;
+	double START_TIME = 5;
+	double FLOW_LAUNCH_END_TIME =20;
+	double END_TIME = 50;
 	cmd.AddValue ("StartTime", "Start time of the simulation", START_TIME);
 	cmd.AddValue ("EndTime", "End time of the simulation", END_TIME);
 	cmd.AddValue ("FlowLaunchEndTime", "End time of the flow launch period", FLOW_LAUNCH_END_TIME);
@@ -330,7 +336,7 @@ main (int argc, char *argv[])
 	cmd.AddValue ("load", "Load of the network, 0.0 - 1.0", load);
 
 
-	uint32_t SERVER_COUNT = 32;
+	uint32_t SERVER_COUNT = 12;
 	uint32_t SPINE_COUNT = 2;
 	uint32_t LEAF_COUNT = 5;
 	uint32_t LINK_COUNT = 4;
@@ -414,7 +420,7 @@ main (int argc, char *argv[])
 	        << "basertt "
 	        <<  "flowstart "
 	        << "priority "
-			<< "cc"
+			<< "cc "
 	        << "incast "
 	        << std::endl;
 
@@ -533,7 +539,7 @@ main (int argc, char *argv[])
 	Ipv4InterfaceContainer serverIpv4[LEAF_COUNT];
 
 	NodeContainer serversCubic[LEAF_COUNT];
-	NodeContainer serversDctcp[LEAF_COUNT];
+	NodeContainer serversBBR[LEAF_COUNT];
 	NodeContainer serversPower[LEAF_COUNT];
 
 	InternetStackHelper internet;
@@ -545,7 +551,7 @@ main (int argc, char *argv[])
 		servers[i].Create (SERVER_COUNT);
 		internet.Install(servers[i]);
 		uint32_t start = 0;
-		for (uint32_t j = start; j < 16; j++) { // Make sure that SERVER_COUNT is divisible by 3.
+		for (uint32_t j = start; j < 6; j++) { // Make sure that SERVER_COUNT is divisible by 3.
 			serversCubic[i].Add(servers[i].Get(j));
 			TypeId tid = TypeId::LookupByName ("ns3::TcpCubic");
 			std::stringstream nodeId;
@@ -554,21 +560,19 @@ main (int argc, char *argv[])
 			Config::Set (specificNode, TypeIdValue(ns3::TcpCubic::GetTypeId()));
 			// std::cout << Config::SetFailSafe (specificNode, TypeIdValue (ns3::TcpCubic::GetTypeId())) << " " << nodeId.str() << std::endl;
 		}
-		start += 16;
-		for (uint32_t j = start; j < 24; j++) { // Make sure that SERVER_COUNT is divisible by 3.
-			serversDctcp[i].Add(servers[i].Get(j));
-			TypeId tid = TypeId::LookupByName ("ns3::TcpDctcp");
+		start += 6;
+		for (uint32_t j = start; j < 12; j++) { // Make sure that SERVER_COUNT is divisible by 3.
+			serversBBR[i].Add(servers[i].Get(j));
+			TypeId tid = TypeId::LookupByName ("ns3::TcpBbr");
 			std::stringstream nodeId;
 			nodeId << servers[i].Get (j)->GetId ();
 			std::string specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpL4Protocol/SocketType";
-			// std::cout << Config::SetFailSafe (specificNode, TypeIdValue (ns3::TcpDctcp::GetTypeId())) << " " << nodeId.str() << std::endl;
 			Config::Set (specificNode, TypeIdValue (ns3::TcpDctcp::GetTypeId()));
-			// std::cout << Config::SetFailSafe (specificNode, TypeIdValue (tid)) << " " << nodeId.str() << std::endl;
-			specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketBase/UseEcn";
-			Config::Set (specificNode, StringValue ("On"));
+			// specificNode = "$ns3::NodeListPriv/NodeList/" + nodeId.str () + "/$ns3::TcpSocketBase/UseEcn";
+			// Config::Set (specificNode, StringValue ("On"));
 		}
-		start += 8;
-		for (uint32_t j = start; j < 32; j++) { // Make sure that SERVER_COUNT is divisible by 3.
+		start += 6;
+		for (uint32_t j = start; j < 12; j++) { // Make sure that SERVER_COUNT is divisible by 3.
 			serversPower[i].Add(servers[i].Get(j));
 			TypeId tid = TypeId::LookupByName ("ns3::TcpAdvanced");
 			std::stringstream nodeId;
@@ -644,6 +648,7 @@ main (int argc, char *argv[])
 			queueDiscs = tc.Install(netDeviceContainer.Get(0));
 			Ptr<GenQueueDisc> genDisc = DynamicCast<GenQueueDisc> (queueDiscs.Get (0));
 			genDisc->SetPortId(leafPortId[leaf]++);
+			
 			switch (algorithm) {
 			case DT:
 				genDisc->setNPrior(nPrior); // IMPORTANT. This will also trigger "alphas = new ..."
@@ -696,7 +701,18 @@ main (int argc, char *argv[])
 					genDisc->alphas[n] = alpha_values[n];
 				}
 				break;
+			case MYCC:
+				genDisc->TraceConnectWithoutContext("getCcRecord", MakeBoundCallback(&getCcRecord));
+				genDisc->setNPrior(nPrior); // IMPORTANT. This will also trigger "alphas = new ..."
+				genDisc->setPortBw(leafServerCapacity);
+				genDisc->SetSharedMemory(sharedMemoryLeaf[leaf]);
+				genDisc->SetBufferAlgorithm(MYCC);
+				for (uint32_t n = 0; n < nPrior; n++) {
+					genDisc->alphas[n] = alpha_values[n];
+				}
+				break;
 			default:
+				std::cout << "ERNTER DEFAULT: " <<algorithm << std::endl;
 				std::cout << "Error in buffer management configuration. Exiting!";
 				return 0;
 			}
@@ -789,6 +805,15 @@ main (int argc, char *argv[])
 							genDisc[i]->alphas[n] = alpha_values[n];
 						}
 						break;
+					case MYCC:
+						genDisc[i]->setNPrior(nPrior); // IMPORTANT. This will also trigger "alphas = new ..."
+						genDisc[i]->setPortBw(leafServerCapacity);
+						genDisc[i]->SetSharedMemory(sharedMemoryLeaf[leaf]);
+						genDisc[i]->SetBufferAlgorithm(MYCC);
+						for (uint32_t n = 0; n < nPrior; n++) {
+							genDisc[i]->alphas[n] = alpha_values[n];
+						}
+						break;
 					default:
 						std::cout << "Error in buffer management configuration. Exiting!";
 						return 0;
@@ -807,7 +832,7 @@ main (int argc, char *argv[])
 	NS_LOG_INFO ("Calculating request rate");
 
 	double requestRate_Cubic = loadCubic * SPINE_LEAF_CAPACITY * SPINE_COUNT * LINK_COUNT / (8 * avg_cdf (cdfTable)) / (serversCubic[0].GetN());
-	double requestRate_Dctcp = loadDctcp * SPINE_LEAF_CAPACITY * SPINE_COUNT * LINK_COUNT / (8 * avg_cdf (cdfTable)) / (serversDctcp[0].GetN());
+	double requestRate_Dctcp = loadDctcp * SPINE_LEAF_CAPACITY * SPINE_COUNT * LINK_COUNT / (8 * avg_cdf (cdfTable)) / (serversBBR[0].GetN());
 	double requestRate_Power = loadPower * SPINE_LEAF_CAPACITY * SPINE_COUNT * LINK_COUNT / (8 * avg_cdf (cdfTable)) / (serversPower[0].GetN());
 
 	if (randomSeed == 0)
@@ -832,7 +857,7 @@ main (int argc, char *argv[])
 	}
 	for (int fromLeafId = 0; fromLeafId < 2; fromLeafId ++)
 	{
-		install_applications(fromLeafId, serversDctcp, requestRate_Dctcp, cdfTable, flowCount, serversDctcp[0].GetN(), LEAF_COUNT, START_TIME, END_TIME, FLOW_LAUNCH_END_TIME, 2,1);
+		install_applications(fromLeafId, serversBBR, requestRate_Dctcp, cdfTable, flowCount, serversBBR[0].GetN(), LEAF_COUNT, START_TIME, END_TIME, FLOW_LAUNCH_END_TIME, 2,1);
 	}
 	for (int fromLeafId = 0; fromLeafId < 2; fromLeafId ++)
 	{

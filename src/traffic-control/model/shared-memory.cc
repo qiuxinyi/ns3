@@ -124,6 +124,10 @@ uint32_t SharedMemoryBuffer::GetQueueSize(uint32_t port, uint32_t queue){
 	return queueLength[port][queue];
 }
 
+uint32_t SharedMemoryBuffer::GetCCQueueSize(uint32_t port, uint32_t queue,uint32_t mycc){
+	return ccQueueLength[port][queue][mycc];
+}
+
 
 uint32_t SharedMemoryBuffer::findLongestThreshold(){
 	uint32_t longestQueueLength = 0;
@@ -184,6 +188,83 @@ bool SharedMemoryBuffer::EnqueueBuffer(uint32_t size, uint32_t port, uint32_t qu
 		return false;
 	}
 }
+
+bool SharedMemoryBuffer::myEnqueueBuffer(uint32_t size, uint32_t port, uint32_t queue,uint32_t mycc){
+	if(RemainingBuffer>size){
+		RemainingBuffer-=size;
+		OccupiedBuffer= std::min(OccupiedBuffer+size, TotalBuffer);
+		queueLength[port][queue]+=size;
+		ccQueueLength[port][queue][mycc]+=size;
+		return true;
+	}
+	else{
+		return false;
+	}
+}
+
+
+void SharedMemoryBuffer::myDequeueBuffer(uint32_t size, uint32_t port, uint32_t queue, uint32_t mycc){
+	double gammaqueue = (std::min((Simulator::Now()-LastUpdatedAverage[port][queue]).GetNanoSeconds(), AverageInterval.GetNanoSeconds())/double(AverageInterval.GetNanoSeconds()));
+	LastUpdatedAverage[port][queue] = Simulator::Now();
+	double gamma = (std::min((Simulator::Now()-LastUpdatedAverageTotal).GetNanoSeconds(), AverageInterval.GetNanoSeconds())/double(AverageInterval.GetNanoSeconds()));
+	LastUpdatedAverageTotal = Simulator::Now();
+	if(OccupiedBuffer>size){
+		OccupiedBuffer-=size;
+		averageSharedOccupancy = gamma*(double(OccupiedBuffer)) + (1-gamma)*double(averageSharedOccupancy);
+		RemainingBuffer+=size;
+	}
+	else{
+		OccupiedBuffer = 0;
+		averageSharedOccupancy = gamma*(double(OccupiedBuffer)) + (1-gamma)*double(averageSharedOccupancy);
+		RemainingBuffer = TotalBuffer;
+	}
+	if (queueLength[port][queue]>size){
+		queueLength[port][queue]-=size;
+		ccQueueLength[port][queue][mycc]-=size;
+		averageQueueLength[port][queue] = gammaqueue*(double(queueLength[port][queue])) + (1-gammaqueue)*double(averageQueueLength[port][queue]);
+	}
+	else{
+		queueLength[port][queue]=0;
+		for(int cc=0;cc<10;cc++){
+			ccQueueLength[port][queue][cc]=0;
+		}
+		averageQueueLength[port][queue] = gammaqueue*(double(queueLength[port][queue])) + (1-gammaqueue)*double(averageQueueLength[port][queue]);
+	}
+	// Dequeue thresholds
+	if (queueLength[port][queue]==0){
+		if (totalThreshold >= threshold[port][queue]){
+			totalThreshold -= threshold[port][queue];
+			threshold[port][queue] = 0;// reset thresholds when queue drains to zero.
+		}
+		else{
+			totalThreshold = 0;
+			threshold[port][queue] = 0;
+		}
+	}
+	else{
+		if (threshold[port][queue] >=size){
+			threshold[port][queue] -= size;
+			if (totalThreshold>= size){
+				totalThreshold -= size;
+			}
+			else{
+				totalThreshold = 0;
+			}
+		}
+		else{
+			if (totalThreshold>= threshold[port][queue]){
+				totalThreshold -= threshold[port][queue];
+				threshold[port][queue] = 0;
+			}
+			else{
+				totalThreshold = 0;
+				threshold[port][queue] = 0;
+			}	
+		}
+	}
+}
+
+
 
 void SharedMemoryBuffer::DequeueBuffer(uint32_t size, uint32_t port, uint32_t queue){
 	double gammaqueue = (std::min((Simulator::Now()-LastUpdatedAverage[port][queue]).GetNanoSeconds(), AverageInterval.GetNanoSeconds())/double(AverageInterval.GetNanoSeconds()));
